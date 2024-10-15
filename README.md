@@ -18,3 +18,5 @@ please see original implementation [here](https://github.com/msracver/Deformable
 - Pytorch >= 2.1.0
 - CudaToolkit >= 11.8
 - Ninja (Optional)
+
+## What's difference from original paper?   
