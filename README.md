@@ -19,4 +19,6 @@ please see original implementation [here](https://github.com/msracver/Deformable
 - CudaToolkit >= 11.8
 - Ninja (Optional)
 
-## What's difference from original paper?   
+## What's different from the original paper?   
+Offset field:   
+Modulation scalar:   
