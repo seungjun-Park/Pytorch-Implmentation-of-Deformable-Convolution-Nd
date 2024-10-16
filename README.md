@@ -24,6 +24,13 @@ OS: Windows10 with MSVC / Linux(Ubuntu) with gcc
    
 ## What's different from the original paper?   
 Offset field:   
-In general, the original paper implements offset field shape as (batch size, 2, kernel height * kernel widht * in_channels, out height, out width) in v1 and v2.  
-In v3, 
+In general, the original paper implements offset field shape as (batch size, 2(dim), kernel height * kernel widht, out height, out width) in v1 and v2.  
+In v3 and v4, the offset field shape is (batch size, 2(dim), groups * kernel height * kernel widht, out height, out width).   
+In this implementation, however, the offset field shape is (batch size, 2(dim), groups * (in_channels / groups) * kernel height * kernel widht, out height, out width).  
+Becuase, i think the previous offset field is not enough to analyze what feature is important in each groups of feature maps of convolution.
+In constrast, previous methods apply offset field per groups to feature maps per groups, my method apply offset field per groups to all of each feature maps per groups.
+
 Modulation scalar:   
+Support sigmoid in v2, softmax in v3, non-bounded value range in v4, tanh in my version.  
+
+
