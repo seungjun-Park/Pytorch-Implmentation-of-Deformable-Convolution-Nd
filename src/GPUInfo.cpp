@@ -1,4 +1,4 @@
-#include <assert.h>
+#include <cassert>
 #include <string>
 #include <iostream>
 #include "GPUInfo.h"
@@ -29,7 +29,7 @@ const cudaDeviceProp* GPUInfo::GetDeviceProps() const
 void GPUInfo::checkDevice(bool printInfo)
 {
     cudaError_t cudaStatus = cudaGetDeviceCount(&this->deviceCount);
-    assert(cudaStatus == cudaError_t::cudaSuccess, std::stirng("Error fetching device count: ") + cudaGetErrorString(cudaStatus));
+    assert(cudaStatus == cudaError_t::cudaSuccess);
 
     deviceProps = new cudaDeviceProp[this->deviceCount];
 
