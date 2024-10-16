@@ -16,9 +16,6 @@ In general, the original paper implements offset field shape as (batch size, 2(d
 In v3 and v4, the offset field shape is (batch size, 2(dim), groups * kernel height * kernel widht, out height, out width).   
    
 In this implementation, however, the offset field shape is (batch size, 2(dim), groups * (in_channels / groups) * kernel height * kernel widht, out height, out width).  
-Becuase, i think the previous offset field is not enough to analyze what feature is important in feature maps per each groups of convolution.
-   
-Previous methods apply offset field per each groups to feature maps per each groups, in contrast, this method apply offset field per each groups to all of each feature maps per each groups.
 
 Modulation scalar:   
 Support sigmoid in v2, softmax in v3, non-bounded value range in v4, tanh(bounded value range to -1 ~ 1) in this version.  
