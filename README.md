@@ -23,7 +23,8 @@ Support sigmoid in v2, softmax in v3, non-bounded value range in v4, tanh(bounde
 ## Requirements   
 - Pytorch >= 2.1.0
 - CudaToolkit >= 11.8
-- Ninja (Optional)
+- Python >= 3.10  
+- Ninja (Optional for fast build)
    
 ## Test environments   
 OS: Windows10 with MSVC / Linux(Ubuntu) with gcc   
