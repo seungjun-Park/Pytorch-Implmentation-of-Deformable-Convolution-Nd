@@ -32,9 +32,9 @@ Support sigmoid in v2, softmax in v3, non-bounded value range in v4, tanh(bounde
 OS: Windows10 with MSVC / Linux(Ubuntu) with gcc   
   
 ## Build
-''' python
+```python
 python setup.py build install
-'''
+```
   
 ## Reference code   
 [CharlesShang/DCNv2](https://github.com/CharlesShang/DCNv2)   
