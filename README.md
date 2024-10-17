@@ -11,7 +11,7 @@ please see original implementation [here](https://github.com/msracver/Deformable
 [Deformable Convolution v4](https://arxiv.org/abs/2401.06197)   
    
 ## What's different from the original paper?   
-Offset field:   
+#### Offset field:   
   
 In general, the original paper implements offset field shape as (batch size, 2(dim), kernel height * kernel widht, out height, out width) in v1 and v2.  
 In v3 and v4, the offset field shape is (batch size, 2(dim), groups * kernel height * kernel widht, out height, out width).   
@@ -19,7 +19,7 @@ In v3 and v4, the offset field shape is (batch size, 2(dim), groups * kernel hei
 In this implementation, however, the offset field shape is (batch size, 2(dim), groups * (in_channels / groups) * kernel height * kernel widht, out height, out width).  
 This may occur additional computation power, but more accuracy compute offset about each feature map.
 
-Modulation scalar:   
+#### Modulation scalar:   
   
 Support sigmoid in v2, softmax in v3, non-bounded value range in v4.  
 
