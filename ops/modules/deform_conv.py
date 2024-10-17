@@ -26,6 +26,24 @@ def _multiply_integers(target: abc.Iterable) -> int:
     return int(mul)
 
 
+def _apply_modulation_type(
+        x: torch.Tensor,
+        modulation_type: str = 'none',
+        groups: int = None):
+
+    if modulation_type == 'none':
+        return x
+    elif modulation_type == 'sigmoid':
+        return x.sigmoid()
+    elif modulation_type == 'softmax':
+        assert groups is not None
+        b, dim, c, *l = x.shape
+        x = F.softmax(x.reshape(b, dim, groups, -1, *l), dim=2).reshape(b, dim, c, *l)
+        return x
+    else:
+        NotImplementedError(f'apply {modulation_type} is not support.')
+
+
 def deform_conv_1d(inps: torch.Tensor,
                    weight: torch.Tensor,
                    offset_field: torch.Tensor,
@@ -171,6 +189,7 @@ class DeformConv1d(nn.Module):
                  dilation: Union[int, List[int], Tuple[int]] = 1,
                  groups: Union[int, List[int], Tuple[int]] = 1,
                  bias: bool = True,
+                 modulation_type: str = 'none',
                  kernel_size_off: Union[int, List[int], Tuple[int]] = None,
                  stride_off: Union[int, List[int], Tuple[int]] = None,
                  padding_off: Union[int, List[int], Tuple[int]] = None,
@@ -181,7 +200,9 @@ class DeformConv1d(nn.Module):
         super().__init__()
 
         assert in_channels % groups == 0 and out_channels % groups == 0
+        assert modulation_type.lower() in ['none', 'sigmoid', 'softmax']
 
+        self.modulation_type = modulation_type.lower()
         self.dim = 1
 
         self.kernel_size = to_1tuple(kernel_size)
@@ -208,23 +229,19 @@ class DeformConv1d(nn.Module):
             bias_off
         )
 
-        self.weight = nn.Parameter(torch.randn(out_channels, in_channels // groups, *self.kernel_size), requires_grad=True)
+        self.weight = nn.Parameter(torch.empty(out_channels, in_channels // groups, *self.kernel_size), requires_grad=True)
 
         if bias:
-            self.bias = nn.Parameter(torch.randn(out_channels), requires_grad=True)
+            self.bias = nn.Parameter(torch.empty(out_channels), requires_grad=True)
         else:
             self.bias = None
 
         self.reset_parameters()
 
-    def reset_parameters(self):
-        n = self.in_channels
-        for k in self.kernel_size:
-            n *= k
-        stdv = 1. / math.sqrt(n)
-        self.weight.data.uniform_(-stdv, stdv)
+    def reset_parameters(self, std=0.02):
+        self.weight.data.normal_(std=std)
         if self.bias is not None:
-            self.bias.data.uniform_(-stdv, stdv)
+            self.bias.data.normal_(std=std)
 
     def forward(self, inps: torch.Tensor) -> torch.Tensor:
         off = self.conv_off(inps)
@@ -232,8 +249,7 @@ class DeformConv1d(nn.Module):
         off = off.reshape(b, self.dim + 1, -1, l)
         offset_field = off[:, 0: self.dim, :, :]
         attn_mask = off[:, self.dim: self.dim + 1, :, :]
-        b, _, c, l = attn_mask.shape
-        attn_mask = F.softmax(attn_mask.reshape(b, 1, self.groups, -1, l), dim=2).reshape(b, 1, c, l)
+        attn_mask = _apply_modulation_type(attn_mask, self.modulation_type, self.groups)
 
         return deform_conv_1d(
             inps,
@@ -259,6 +275,7 @@ class DeformConv2d(nn.Module):
                  dilation: Union[int, List[int], Tuple[int]] = 1,
                  groups: Union[int, List[int], Tuple[int]] = 1,
                  bias: bool = True,
+                 modulation_type: str = 'none',
                  kernel_size_off: Union[int, List[int], Tuple[int]] = None,
                  stride_off: Union[int, List[int], Tuple[int]] = None,
                  padding_off: Union[int, List[int], Tuple[int]] = None,
@@ -269,7 +286,9 @@ class DeformConv2d(nn.Module):
         super().__init__()
 
         assert in_channels % groups == 0 and out_channels % groups == 0
+        assert modulation_type.lower() in ['none', 'sigmoid', 'softmax']
 
+        self.modulation_type = modulation_type.lower()
         self.dim = 2
 
         self.in_channels = in_channels
@@ -309,14 +328,10 @@ class DeformConv2d(nn.Module):
 
         self.reset_parameters()
 
-    def reset_parameters(self):
-        n = self.in_channels
-        for k in self.kernel_size:
-            n *= k
-        stdv = 1. / math.sqrt(n)
-        self.weight.data.uniform_(-stdv, stdv)
+    def reset_parameters(self, std=0.02):
+        self.weight.data.normal_(std=std)
         if self.bias is not None:
-            self.bias.data.uniform_(-stdv, stdv)
+            self.bias.data.normal_(std=std)
 
     def forward(self, inps: torch.Tensor) -> torch.Tensor:
         off = self.conv_off(inps)
@@ -324,8 +339,7 @@ class DeformConv2d(nn.Module):
         off = off.reshape(b, self.dim + 1, -1, h, w)
         offset_field = off[:, 0: self.dim, :, :, :]
         attn_mask = off[:, self.dim: self.dim + 1, :, :, :]
-        b, _, c, h, w = attn_mask.shape
-        attn_mask = F.softmax(attn_mask.reshape(b, 1, self.groups, -1, h, w), dim=2).reshape(b, 1, c, h, w)
+        attn_mask = _apply_modulation_type(attn_mask, self.modulation_type, self.groups)
 
         return deform_conv_2d(
             inps,
@@ -351,6 +365,7 @@ class DeformConv3d(nn.Module):
                  dilation: Union[int, List[int], Tuple[int]] = 1,
                  groups: Union[int, List[int], Tuple[int]] = 1,
                  bias: bool = True,
+                 modulation_type: str = 'none',
                  kernel_size_off: Union[int, List[int], Tuple[int]] = None,
                  stride_off: Union[int, List[int], Tuple[int]] = None,
                  padding_off: Union[int, List[int], Tuple[int]] = None,
@@ -361,7 +376,9 @@ class DeformConv3d(nn.Module):
         super().__init__()
 
         assert in_channels % groups == 0 and out_channels % groups == 0
+        assert modulation_type.lower() in ['none', 'sigmoid', 'softmax']
 
+        self.modulation_type = modulation_type.lower()
         self.dim = 3
 
         self.kernel_size = to_3tuple(kernel_size)
@@ -398,14 +415,10 @@ class DeformConv3d(nn.Module):
 
         self.reset_parameters()
 
-    def reset_parameters(self):
-        n = self.in_channels
-        for k in self.kernel_size:
-            n *= k
-        stdv = 1. / math.sqrt(n)
-        self.weight.data.uniform_(-stdv, stdv)
+    def reset_parameters(self, std=0.02):
+        self.weight.data.normal_(std=std)
         if self.bias is not None:
-            self.bias.data.uniform_(-stdv, stdv)
+            self.bias.data.normal_(std=std)
 
     def forward(self, inps: torch.Tensor) -> torch.Tensor:
         off = self.conv_off(inps)
@@ -413,8 +426,7 @@ class DeformConv3d(nn.Module):
         off = off.reshape(b, self.dim + 1, -1, d, h, w)
         offset_field = off[:, 0: self.dim, :, :, :, :]
         attn_mask = off[:, self.dim: self.dim + 1, :, :, :, :]
-        b, _, c, d, h, w = attn_mask.shape
-        attn_mask = F.softmax(attn_mask.reshape(b, 1, self.groups, -1, d, h, w), dim=2).reshape(b, 1, c, d, h, w)
+        attn_mask = _apply_modulation_type(attn_mask, self.modulation_type, self.groups)
 
         return deform_conv_3d(
             inps,
