@@ -1,4 +1,4 @@
-# Pytorch-implmentation-of-Deformable-Convolution-Nd   
+# Pytorch-Implmentation-of-Deformable-Convolution-Nd   
 Supporting N-dimensional deformable convolution    
 This implementation is quite different from original implementation.   
    
