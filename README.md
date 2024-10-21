@@ -37,6 +37,6 @@ python setup.py build install
 ```
   
 ## Reference code   
-[Pytorch official Dilated Convolution](https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/native/NaiveDilatedConvolution.cpp)  
+[Pytorch official/Dilated Convolution](https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/native/NaiveDilatedConvolution.cpp)  
 [CharlesShang/DCNv2](https://github.com/CharlesShang/DCNv2)   
 [OpenGVLab/DCNv4](https://github.com/OpenGVLab/DCNv4)   
