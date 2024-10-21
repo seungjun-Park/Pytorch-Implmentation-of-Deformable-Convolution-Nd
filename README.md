@@ -17,6 +17,8 @@ Support 1d ~ Nd implement. (maximum dimension is 127).
 [Deformable Convolution v3(InternImage)](https://arxiv.org/abs/2211.05778)   
 [Deformable Convolution v4](https://arxiv.org/abs/2401.06197)   
 
+## Formula explained  
+
 ## Requirements   
 - Pytorch
 - CudaToolkit >= 11.0 (Cuda capability >= 7.0 to support fp16)
