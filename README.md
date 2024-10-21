@@ -6,10 +6,10 @@ please see original implementation [here](https://github.com/msracver/Deformable
 
 ## Release note  
 
-Support fp16 half precision.    
+Support fp16 half precision. (bfp16 may be support if release cuda comput capability over 9.0 gpus)  
 Support torch.no_grad().  
 Support 1d ~ Nd implement. (maximum dimension is 127).       
-  
+Support offset_feild_channel_per_groups params. (if this value is 1, then it is equal to paper version)  
 
 ## Papers   
 [Deformable Convolution v1](https://arxiv.org/abs/1703.06211)   
