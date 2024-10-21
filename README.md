@@ -17,7 +17,7 @@ Support offset_feild_channel_per_groups params. (if this value is 1, then it is 
 [Deformable Convolution v3(InternImage)](https://arxiv.org/abs/2211.05778)   
 [Deformable Convolution v4](https://arxiv.org/abs/2401.06197)   
 
-## Formula explained  
+## Mechanism   
 
 ## Requirements   
 - Pytorch
