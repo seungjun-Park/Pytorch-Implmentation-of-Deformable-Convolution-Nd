@@ -12,7 +12,8 @@ at::Tensor deform_conv_forward(
 	at::IntArrayRef stride = 1,
 	at::IntArrayRef padding = 0,
 	at::IntArrayRef dilation = 1,
-	int64_t groups = 1,
+	const int32_t groups = 1,
+	const int32_t offset_field_channels_per_groups = 1,
 	const c10::optional<at::Tensor>& bias_opt = {}
 );
 
@@ -26,6 +27,7 @@ std::vector<at::Tensor> deform_conv_backward(
 	at::IntArrayRef stride = 1,
 	at::IntArrayRef padding = 0,
 	at::IntArrayRef dilation = 1,
-	int64_t groups = 1,
+	const int32_t groups = 1,
+	const int32_t offset_field_channels_per_groups = 1,
 	const c10::optional<at::Tensor>& bias_opt = {}
 );

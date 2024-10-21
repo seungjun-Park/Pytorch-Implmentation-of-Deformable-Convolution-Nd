@@ -1,7 +1,7 @@
 #include <deform_conv.h>
 #include <cpu/deform_conv_cpu.h>
 #include <deform_conv_utils.h>
-#include <utils.h>
+#include <array_utils.h>
 
 #include <ATen/native/utils/ParamUtils.h>
 
@@ -18,7 +18,8 @@ at::Tensor deform_conv_forward(
 	at::IntArrayRef stride,
 	at::IntArrayRef padding,
 	at::IntArrayRef dilation,
-	int64_t groups,
+	const int32_t groups,
+	const int32_t offset_field_channels_per_groups,
 	const c10::optional<at::Tensor>& bias_opt
 )
 {
@@ -26,7 +27,7 @@ at::Tensor deform_conv_forward(
 	const at::Tensor& bias = *bias_maybe_owned;
 
 	auto k = weight.dim();
-	int64_t dim = k - 2;
+	int8_t dim = k - 2;
 
 	bool is_batched = input.dim() == dim + 2;
 	const at::Tensor batched_input = is_batched ? input.contiguous() : input.contiguous().unsqueeze(0);
@@ -58,7 +59,8 @@ at::Tensor deform_conv_forward(
 		at::IntArrayRef stride,
 		at::IntArrayRef padding,
 		at::IntArrayRef dilation,
-		int64_t groups,
+		const int32_t groups,
+		const int32_t offset_field_channels_per_groups,
 		const at::Tensor& bias) = nullptr;
 
 	if (input.is_cuda())
@@ -73,19 +75,43 @@ at::Tensor deform_conv_forward(
 	}
 
 	TORCH_CHECK(deform_conv_forward_func != nullptr);
+	
+	at::Tensor output;
 
-	at::Tensor output = (*deform_conv_forward_func)(
-		batched_input,
-		weight,
-		offset_field,
-		attn_mask,
-		at::native::expand_param_if_needed(kernel_size, "kernel_size", dim),
-		at::native::expand_param_if_needed(stride, "stride", dim),
-		at::native::expand_param_if_needed(padding, "padding", dim),
-		at::native::expand_param_if_needed(dilation, "dilation", dim),
-		groups,
-		bias
-	);
+	if (!torch::GradMode::is_enabled())
+	{
+		torch::NoGradGuard no_grad;
+		output = (*deform_conv_forward_func)(
+			batched_input,
+			weight,
+			offset_field,
+			attn_mask,
+			at::native::expand_param_if_needed(kernel_size, "kernel_size", dim),
+			at::native::expand_param_if_needed(stride, "stride", dim),
+			at::native::expand_param_if_needed(padding, "padding", dim),
+			at::native::expand_param_if_needed(dilation, "dilation", dim),
+			groups,
+			offset_field_channels_per_groups,
+			bias
+			);
+	}
+
+	else
+	{
+		output = (*deform_conv_forward_func)(
+			batched_input,
+			weight,
+			offset_field,
+			attn_mask,
+			at::native::expand_param_if_needed(kernel_size, "kernel_size", dim),
+			at::native::expand_param_if_needed(stride, "stride", dim),
+			at::native::expand_param_if_needed(padding, "padding", dim),
+			at::native::expand_param_if_needed(dilation, "dilation", dim),
+			groups,
+			offset_field_channels_per_groups,
+			bias
+			);
+	}
 
 	return is_batched ? std::move(output) : output.squeeze(0);
 }
@@ -100,7 +126,8 @@ std::vector<at::Tensor> deform_conv_backward(
 	at::IntArrayRef stride,
 	at::IntArrayRef padding,
 	at::IntArrayRef dilation,
-	int64_t groups,
+	const int32_t groups,
+	const int32_t offset_field_channels_per_groups,
 	const c10::optional<at::Tensor>& bias_opt
 )
 {
@@ -108,7 +135,7 @@ std::vector<at::Tensor> deform_conv_backward(
 	const at::Tensor& bias = *bias_maybe_owned;
 
 	auto k = weight.dim();
-	int64_t dim = k - 2;
+	int8_t dim = k - 2;
 
 	bool is_batched = input.dim() == dim + 2;
 	const at::Tensor batched_input = is_batched ? input.contiguous() : input.contiguous().unsqueeze(0);
@@ -130,17 +157,18 @@ std::vector<at::Tensor> deform_conv_backward(
 
 	// the function pointer for each backend implementation
 	std::vector<at::Tensor> (*deform_conv_backward_func)(
-		const at::Tensor&,
-		const at::Tensor&,
-		const at::Tensor&,
-		const at::Tensor&,
-		const at::Tensor&,
-		at::IntArrayRef,
-		at::IntArrayRef,
-		at::IntArrayRef,
-		at::IntArrayRef,
-		int64_t,
-		const at::Tensor&) = nullptr;
+		const at::Tensor & input,
+		const at::Tensor & weight,
+		const at::Tensor & offset_field,
+		const at::Tensor & attn_mask,
+		const at::Tensor & grad_output,
+		at::IntArrayRef kernel_size,
+		at::IntArrayRef stride,
+		at::IntArrayRef padding,
+		at::IntArrayRef dilation,
+		const int32_t groups,
+		const int32_t offset_field_channels_per_groups,
+		const at::Tensor& bias) = nullptr;
 
 	if (input.is_cuda())
 	{
@@ -153,19 +181,44 @@ std::vector<at::Tensor> deform_conv_backward(
 		deform_conv_backward_func = deform_conv_nd_backward_cpu;
 	}
 
-	std::vector<at::Tensor> grads = deform_conv_backward_func(
-		batched_input,
-		weight,
-		offset_field,
-		attn_mask,
-		grad_output,
-		at::native::expand_param_if_needed(kernel_size, "kernel_size", dim),
-		at::native::expand_param_if_needed(stride, "stride", dim),
-		at::native::expand_param_if_needed(padding, "padding", dim),
-		at::native::expand_param_if_needed(dilation, "dilation", dim),
-		groups,
-		bias
-	);
+	std::vector<at::Tensor> grads;
+
+	if (!torch::GradMode::is_enabled())
+	{
+		torch::NoGradGuard no_grad;
+		grads = deform_conv_backward_func(
+			batched_input,
+			weight,
+			offset_field,
+			attn_mask,
+			grad_output,
+			at::native::expand_param_if_needed(kernel_size, "kernel_size", dim),
+			at::native::expand_param_if_needed(stride, "stride", dim),
+			at::native::expand_param_if_needed(padding, "padding", dim),
+			at::native::expand_param_if_needed(dilation, "dilation", dim),
+			groups,
+			offset_field_channels_per_groups,
+			bias
+		);
+	}
+
+	else
+	{
+		grads = deform_conv_backward_func(
+			batched_input,
+			weight,
+			offset_field,
+			attn_mask,
+			grad_output,
+			at::native::expand_param_if_needed(kernel_size, "kernel_size", dim),
+			at::native::expand_param_if_needed(stride, "stride", dim),
+			at::native::expand_param_if_needed(padding, "padding", dim),
+			at::native::expand_param_if_needed(dilation, "dilation", dim),
+			groups,
+			offset_field_channels_per_groups,
+			bias
+		);
+	}
 
 	if (!is_batched)
 	{
