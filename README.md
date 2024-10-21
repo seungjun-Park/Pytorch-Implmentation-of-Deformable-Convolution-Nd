@@ -8,7 +8,7 @@ please see original implementation [here](https://github.com/msracver/Deformable
 
 Support fp16 half precision.    
 Support torch.no_grad().  
-Support 1d ~ Nd implement.     
+Support 1d ~ Nd implement(maximum dimension is 127).       
   
 
 ## Papers   
