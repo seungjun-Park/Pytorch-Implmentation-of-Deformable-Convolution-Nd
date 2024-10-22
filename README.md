@@ -22,7 +22,7 @@ please see original implementation [here](https://github.com/msracver/Deformable
 
 ## Requirements   
 - Pytorch
-- CudaToolkit >= 11.0 (Cuda capability >= 8.0 to support f16 and bf16)
+- CudaToolkit >= 11.0 (Cuda compute capability >= 8.0 to support f16 and bf16)
 - Python
 - Ninja (Optional for fast build)
    
