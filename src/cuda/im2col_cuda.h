@@ -60,7 +60,7 @@ im2col_nd_cuda(
     int64_t base_offset_field_idx = groups * offset_field_channels_per_groups * kernel_sizes * output_sizes;
     int64_t attn_mask_idx = (((batch_idx * groups + g) * offset_field_channels_per_groups + (ch * offset_field_channels_per_groups / channels)) * kernel_sizes + k) * output_sizes + col;
 
-    data_im += ((batch_idx * groups + g) * channels + ch) * input_sizes;
+    data_im += im_idx;
     data_col += col_idx;
 
     // compute current kernel size, output size and coord.
