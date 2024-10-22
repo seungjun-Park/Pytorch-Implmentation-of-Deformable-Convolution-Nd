@@ -6,16 +6,17 @@ please see original implementation [here](https://github.com/msracver/Deformable
 
 ## Release note  
 
-- Support fp16 and bfp16. (only gpu available)  
+- Support fp16. (cuda compute capability >= 7.0 && only gpu available)
+- Support bfp16. (cuda compute capability >= 8.0)  
 - Support torch.no_grad().  
 - Support 1d ~ Nd implement. (maximum dimension is 127).       
 - Support offset_feild_channel_per_groups params. (if this value is 1, then it is equal to paper version)  
 
 ## Papers   
-[Deformable Convolution v1](https://arxiv.org/abs/1703.06211)   
-[Deformable Convolution v2](https://arxiv.org/abs/1811.11168)   
-[Deformable Convolution v3(InternImage)](https://arxiv.org/abs/2211.05778)   
-[Deformable Convolution v4](https://arxiv.org/abs/2401.06197)   
+- [Deformable Convolution v1](https://arxiv.org/abs/1703.06211)   
+- [Deformable Convolution v2](https://arxiv.org/abs/1811.11168)   
+- [Deformable Convolution v3(InternImage)](https://arxiv.org/abs/2211.05778)   
+- [Deformable Convolution v4](https://arxiv.org/abs/2401.06197)   
 
 ## Mechanism   
 
