@@ -27,12 +27,12 @@ please see original implementation [here](https://github.com/msracver/Deformable
 - Ninja (Optional for fast build)
    
 ## Test environments   
-OS: Windows10 with MSVC / Linux(Ubuntu) with gcc  
-C++: std 17  
-C: std 14  
-Python: 3.10  
-Pytorch: 2.1.0  
-CudaToolkit: 11.8  
+- OS: Windows10 with MSVC / Linux(Ubuntu) with gcc  
+- C++: std 17  
+- C: std 14  
+- Python: 3.10  
+- Pytorch: 2.1.0  
+- CudaToolkit: 11.8  
   
 ## Build
 ```python
