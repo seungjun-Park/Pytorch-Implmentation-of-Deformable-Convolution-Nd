@@ -21,7 +21,7 @@ Support offset_feild_channel_per_groups params. (if this value is 1, then it is 
 
 ## Requirements   
 - Pytorch
-- CudaToolkit >= 11.0 (Cuda capability >= 7.0 to support fp16)
+- CudaToolkit >= 11.0 (Cuda capability >= 8.0 to support f16 and bf16)
 - Python
 - Ninja (Optional for fast build)
    
