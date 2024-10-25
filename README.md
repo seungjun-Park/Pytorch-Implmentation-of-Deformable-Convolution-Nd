@@ -8,7 +8,8 @@ please see original implementation [here](https://github.com/msracver/Deformable
 
 - Support fp16. (cuda compute capability >= 7.0 && only gpu available)
 - Support bfp16. (cuda compute capability >= 8.0)  
-- Support torch.no_grad().  
+- Support torch.no_grad().
+- Support torch.autocast().  
 - Support 1d ~ Nd implement. (maximum dimension is 127).       
 - Support offset_feild_channel_per_groups params. (if this value is 1, then it is equal to paper version)  
 
@@ -41,9 +42,37 @@ python setup.py build install
 
 ## Example  
 ```
+import torch
+import custom_op
+
+device = 'cuda'
+
+inp = torch.randn(2, 32, 64, 64).to(device)
+weight = torch.randn(64, 32 // 2, 3, 3).to(device)
+bias = torch.randn(64).to(device)
+offset_field = torch.randn(2, 2, 16 * 9, 64, 64).to(device)
+attn_mask = torch.randn(2, 1, 16 * 9, 64, 64).to(device)
+
+with torch.cuda.amp.autocast(dtype=torch.bfloat16):
+    output = torch.ops.custom_op.deform_conv2d(
+        inp,
+        weight,
+        offset_field,
+        attn_mask,
+        (3, 3),
+        (1, 1),
+        (1, 1),
+        (1, 1),
+        2,
+        8,
+        bias,
+    )
+
+print(output)
 ```
   
-## Reference code   
+## Reference   
+- [Pytorch official dispatch mechanism doc](https://pytorch.org/tutorials/advanced/dispatcher.html)  
 - [Pytorch official/Dilated Convolution](https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/native/NaiveDilatedConvolution.cpp)  
 - [CharlesShang/DCNv2](https://github.com/CharlesShang/DCNv2)   
 - [OpenGVLab/DCNv4](https://github.com/OpenGVLab/DCNv4)   
