@@ -532,7 +532,7 @@ linear_interp_nd_weight(
         if (is_valid_data)
         {
 #ifdef __CUDA_ARCH__
-            atomicAdd(&data_grad[data_idx], weight * col * attn_mask);
+            atomicAdd(&data_grad[data_idx], (mapped_type<T>)(weight * col * attn_mask));
 #else
             ((T*)data_grad)[data_idx] += weight * col * attn_mask;
 #endif // __CUDA_ARCH__
@@ -582,10 +582,10 @@ linear_interp_nd_weight(
     T w2 = ratio;
 #ifdef __CUDA_ARCH__
     if (low >= 0 && low < data_size[0])
-        atomicAdd(&data_grad[low], w1 * attn_mask * col);
+        atomicAdd(&data_grad[low], (mapped_type<T>)(w1 * attn_mask * col));
 
     if (high >= 0 && high < data_size[0])
-        atomicAdd(&data_grad[high], w2 * attn_mask * col);
+        atomicAdd(&data_grad[high], (mapped_type<T>)(w2 * attn_mask * col));
 #else
     if (low >= 0 && low < data_size[0])
         ((T*)data_grad)[low] += w1 * attn_mask * col;
@@ -630,22 +630,22 @@ linear_interp_nd_weight(
 #ifdef __CUDA_ARCH__
     if (h_low >= 0 && h_low < data_size[0] && w_low >= 0 && w_low < data_size[1])
     {
-        atomicAdd(&data_grad[h_low * data_size[1] + w_low], attn_mask * col * w11);
+        atomicAdd(&data_grad[h_low * data_size[1] + w_low], (mapped_type<T>)(attn_mask * col * w11));
     }
 
     if (h_high >= 0 && h_high < data_size[0] && w_low >= 0 && w_low < data_size[1])
     {
-        atomicAdd(&data_grad[h_high * data_size[1] + w_low], attn_mask * col * w21);
+        atomicAdd(&data_grad[h_high * data_size[1] + w_low], (mapped_type<T>)(attn_mask * col * w21));
     }
 
     if (h_low >= 0 && h_low < data_size[0] && w_high >= 0 && w_high < data_size[1])
     {
-        atomicAdd(&data_grad[h_low * data_size[1] + w_high], attn_mask * col * w12);
+        atomicAdd(&data_grad[h_low * data_size[1] + w_high], (mapped_type<T>)(attn_mask * col * w12));
     }
 
     if (h_high >= 0 && h_high < data_size[0] && w_high >= 0 && w_high < data_size[1])
     {
-        atomicAdd(&data_grad[h_high * data_size[1] + w_high], attn_mask * col * w22);
+        atomicAdd(&data_grad[h_high * data_size[1] + w_high], (mapped_type<T>)(attn_mask * col * w22));
     }
 #else
     if (h_low >= 0 && h_low < data_size[0] && w_low >= 0 && w_low < data_size[1])
@@ -713,28 +713,28 @@ linear_interp_nd_weight(
 
 #ifdef __CUDA_ARCH__
     if (d_low >= 0 && d_low < data_size[0] && h_low >= 0 && h_low < data_size[1] && w_low >= 0 && w_low < data_size[2])
-        atomicAdd(&data_grad[d_low * data_size[1] * data_size[2] + h_low * data_size[2] + w_low], w111 * attn_mask * col);
+        atomicAdd(&data_grad[d_low * data_size[1] * data_size[2] + h_low * data_size[2] + w_low], (mapped_type<T>)(w111 * attn_mask * col));
 
     if (d_high >= 0 && d_high < data_size[0] && h_low >= 0 && h_low < data_size[1] && w_low >= 0 && w_low < data_size[2])
-        atomicAdd(&data_grad[d_high * data_size[1] * data_size[2] + h_low * data_size[2] + w_low], w211 * attn_mask * col);
+        atomicAdd(&data_grad[d_high * data_size[1] * data_size[2] + h_low * data_size[2] + w_low], (mapped_type<T>)(w211 * attn_mask * col));
 
     if (d_low >= 0 && d_low < data_size[0] && h_high >= 0 && h_high < data_size[1] && w_low >= 0 && w_low < data_size[2])
-        atomicAdd(&data_grad[d_low * data_size[1] * data_size[2] + h_high * data_size[2] + w_low], w121 * attn_mask * col);
+        atomicAdd(&data_grad[d_low * data_size[1] * data_size[2] + h_high * data_size[2] + w_low], (mapped_type<T>)(w121 * attn_mask * col));
 
     if (d_high >= 0 && d_high < data_size[0] && h_high >= 0 && h_high < data_size[1] && w_low >= 0 && w_low < data_size[2])
-        atomicAdd(&data_grad[d_high * data_size[1] * data_size[2] + h_high * data_size[2] + w_low], w221 * attn_mask * col);
+        atomicAdd(&data_grad[d_high * data_size[1] * data_size[2] + h_high * data_size[2] + w_low], (mapped_type<T>)(w221 * attn_mask * col));
 
     if (d_low >= 0 && d_low < data_size[0] && h_low >= 0 && h_low < data_size[1] && w_high >= 0 && w_high < data_size[2])
-        atomicAdd(&data_grad[d_low * data_size[1] * data_size[2] + h_low * data_size[2] + w_high], w112 * attn_mask * col);
+        atomicAdd(&data_grad[d_low * data_size[1] * data_size[2] + h_low * data_size[2] + w_high], (mapped_type<T>)(w112 * attn_mask * col));
 
     if (d_high >= 0 && d_high < data_size[0] && h_low >= 0 && h_low < data_size[1] && w_high >= 0 && w_high < data_size[2])
-        atomicAdd(&data_grad[d_high * data_size[1] * data_size[2] + h_low * data_size[2] + w_high], w212 * attn_mask * col);
+        atomicAdd(&data_grad[d_high * data_size[1] * data_size[2] + h_low * data_size[2] + w_high], (mapped_type<T>)(w212 * attn_mask * col));
 
     if (d_low >= 0 && d_low < data_size[0] && h_high >= 0 && h_high < data_size[1] && w_high >= 0 && w_high < data_size[2])
-        atomicAdd(&data_grad[d_low * data_size[1] * data_size[2] + h_high * data_size[2] + w_high], w122 * attn_mask * col);
+        atomicAdd(&data_grad[d_low * data_size[1] * data_size[2] + h_high * data_size[2] + w_high], (mapped_type<T>)(w122 * attn_mask * col));
 
     if (d_high >= 0 && d_high < data_size[0] && h_high >= 0 && h_high < data_size[1] && w_high >= 0 && w_high < data_size[2])
-        atomicAdd(&data_grad[d_high * data_size[1] * data_size[2] + h_high * data_size[2] + w_high], w222 * attn_mask * col);
+        atomicAdd(&data_grad[d_high * data_size[1] * data_size[2] + h_high * data_size[2] + w_high], (mapped_type<T>)(w222 * attn_mask * col));
 #else
     if (d_low >= 0 && d_low < data_size[0] && h_low >= 0 && h_low < data_size[1] && w_low >= 0 && w_low < data_size[2])
         ((T*)data_grad)[d_low * data_size[1] * data_size[2] + h_low * data_size[2] + w_low] += w111 * attn_mask * col;

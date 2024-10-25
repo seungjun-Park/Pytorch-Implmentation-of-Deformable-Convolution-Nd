@@ -40,7 +40,7 @@ col2im_nd_cuda(
     int32_t kernel_sizes = multiply_integers(kernel_size);
 
     int64_t num_col = sub_batch * groups * channels * kernel_sizes * output_sizes;
-    int32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
+    int64_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx >= num_col)
     {
         return;
@@ -83,13 +83,13 @@ col2im_nd_cuda(
     }
 
     T val = linear_interp_nd<T, dim>(data_im, coord, input_size);
-    atomicAdd(&data_grad_attn_mask[attn_mask_idx], (*data_col) * val);
+    atomicAdd(&data_grad_attn_mask[attn_mask_idx], (mapped_type<T>)((*data_col) * val));
 
     Array<T, dim> grad_coord = linear_interp_nd_grad<T, dim>(data_im, coord, input_size);
 
     for (int8_t i = dim - 1; i >= 0; i--)
     {
-        atomicAdd(&((data_grad_offset_field + i * base_offset_field_idx)[offset_field_idx]), (*data_col) * grad_coord[i] * data_attn_mask[attn_mask_idx]);
+        atomicAdd(&((data_grad_offset_field + i * base_offset_field_idx)[offset_field_idx]), (mapped_type<T>)((*data_col) * grad_coord[i] * data_attn_mask[attn_mask_idx]));
     }
 
     linear_interp_nd_weight<T, dim>(*data_col, data_attn_mask[attn_mask_idx], coord, input_size, data_grad_im);

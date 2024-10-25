@@ -33,7 +33,7 @@ im2col_nd_cuda(
     int32_t kernel_sizes = multiply_integers<dim>(kernel_size);
 
     int64_t num_col = groups * channels * kernel_sizes * sub_batch * output_sizes;
-    int32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
+    int64_t idx = threadIdx.x + blockDim.x * blockIdx.x;
 
     if (idx >= num_col)
     {

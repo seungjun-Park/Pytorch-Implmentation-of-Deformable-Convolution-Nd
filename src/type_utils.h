@@ -4,6 +4,7 @@
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
 #include <cuda_bf16.h>
+#include <type_traits>
 
 // to support half precision cuda version
 
@@ -13,13 +14,21 @@ struct type_mapper
 	using type = T;
 };
 
-#ifdef WITH_CUDA
+#if defined(__CUDACC__) && (__CUDA_ARCH__ >= 700 || !defined(__CUDA_ARCH__))
 template<>
 struct type_mapper<c10::Half>
 {
-	using type = __half;
+	using type = half;
 };
-#endif // WITH_CUDA
+#endif
+
+#if defined(__CUDACC__) && (__CUDA_ARCH__ >= 800 || !defined(__CUDA_ARCH__))
+template<>
+struct type_mapper<c10::BFloat16>
+{
+	using type = nv_bfloat16;
+};
+#endif
 
 template<typename T>
 using mapped_type = typename type_mapper<T>::type;

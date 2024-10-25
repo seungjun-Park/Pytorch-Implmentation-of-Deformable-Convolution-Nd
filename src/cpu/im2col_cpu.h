@@ -5,77 +5,6 @@
 #include <array_utils.h>
 #include <type_traits>
 
-/////////////////////       Declaration     ///////////////////
-
-template<typename T, int8_t dim>
-typename std::enable_if<(dim > IMPLEMENTED_DIM), void>::type
-im2col_nd_cpu(
-    const T* data_im,
-    const T* data_offset_field,
-    const T* data_attn_mask,
-    const int32_t channels,
-    const IntArray<dim>& input_size,
-    const IntArray<dim>& output_size,
-    const IntArray<dim>& kernel_size,
-    const IntArray<dim>& stride,
-    const IntArray<dim>& padding,
-    const IntArray<dim>& dilation,
-    const int32_t groups,
-    const int32_t offset_field_channels_per_groups,
-    T* data_col);
-
-template<typename T, int8_t dim>
-typename std::enable_if<(dim == 1), void>::type
-im2col_nd_cpu(
-    const T* data_im,
-    const T* data_offset_field,
-    const T* data_attn_mask,
-    const int32_t channels,
-    const IntArray<1>& input_size,
-    const IntArray<1>& output_size,
-    const IntArray<1>& kernel_size,
-    const IntArray<1>& stride,
-    const IntArray<1>& padding,
-    const IntArray<1>& dilation,
-    const int32_t groups,
-    const int32_t offset_field_channels_per_groups,
-    T* data_col);
-
-template<typename T, int8_t dim>
-typename std::enable_if<(dim == 2), void>::type
-im2col_nd_cpu(
-    const T* data_im,
-    const T* data_offset_field,
-    const T* data_attn_mask,
-    const int32_t channels,
-    const IntArray<2>& input_size,
-    const IntArray<2>& output_size,
-    const IntArray<2>& kernel_size,
-    const IntArray<2>& stride,
-    const IntArray<2>& padding,
-    const IntArray<2>& dilation,
-    const int32_t groups,
-    const int32_t offset_field_channels_per_groups,
-    T* data_col);
-
-template<typename T, int8_t dim>
-typename std::enable_if<(dim == 3), void>::type
-im2col_nd_cpu(
-    const T* data_im,
-    const T* data_offset_field,
-    const T* data_attn_mask,
-    const int32_t channels,
-    const IntArray<3>& input_size,
-    const IntArray<3>& output_size,
-    const IntArray<3>& kernel_size,
-    const IntArray<3>& stride,
-    const IntArray<3>& padding,
-    const IntArray<3>& dilation,
-    const int32_t groups,
-    const int32_t offset_field_channels_per_groups,
-    T* data_col);
-
-
 //////////////////////      Implementation      ////////////////////////
 
 
@@ -103,7 +32,7 @@ im2col_nd_cpu(
     const int32_t input_sizes = multiply_integers(input_size);
 
     // compute index for each dimension of offset field.
-    const int64_t base_offset_field_idx = groups * offset_field_channels_per_groups * kernel_sizes * output_sizes;
+    const int32_t base_offset_field_idx = groups * offset_field_channels_per_groups * kernel_sizes * output_sizes;
     const int32_t offset_field_channels = channels / offset_field_channels_per_groups;
 
     IntArray<dim> current_output_size;
@@ -125,7 +54,7 @@ im2col_nd_cpu(
                     // compute n-dimensional current kernel/output size
                     int32_t out_div = 1;
                     int32_t k_div = 1;
-                    for (int32_t i = dim - 1; i >= 0; i--)
+                    for (int8_t i = dim - 1; i >= 0; i--)
                     {
                         current_output_size[i] = col / out_div % output_size[i];
                         current_kernel_size[i] = k / k_div % kernel_size[i];

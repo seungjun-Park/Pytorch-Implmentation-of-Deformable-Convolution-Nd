@@ -8,6 +8,7 @@
 // replace to at::IntArrayRef in device code.
 // it's usage is equal to at::IntArrayRef in deform conv cpu version.
 
+
 #ifndef IMPLEMENTED_DIM
 #define IMPLEMENTED_DIM 3
 #endif // !IMPLEMENTED_DIM
@@ -52,20 +53,20 @@ Array<T, size> ArrayRef2Array(at::ArrayRef<T> arr)
 	return target;
 }
 
-template<uint32_t size>
+template<int64_t size>
 IntArray<size> IntArrayRef2IntArray(at::IntArrayRef arr)
 {
 	assert(arr.size() == size);
 	IntArray<size> target;
 	for (size_t i = 0; i < size; i++)
 	{
-		target[i] = static_cast<int32_t>(arr[i]);
+		target[i] = (int32_t)(arr[i]);
 	}
 
 	return target;
 }
 
-template<typename T, uint32_t size>
+template<typename T, int64_t size>
 Array<T, size> vector2Array(std::vector<T>& vec)
 {
 	assert(vec.size() == size);
@@ -78,7 +79,7 @@ Array<T, size> vector2Array(std::vector<T>& vec)
 	return target;
 }
 
-template<typename T, uint32_t size>
+template<typename T, int64_t size>
 __host__ __device__ T multiply_elements(const Array<T, size>& arr)
 {
 	T mul = 1;
@@ -91,14 +92,14 @@ __host__ __device__ T multiply_elements(const Array<T, size>& arr)
 	return (T)mul;
 }
 
-template<uint32_t size>
-__host__ __device__ uint32_t multiply_integers(const IntArray<size>& arr)
+template<int64_t size>
+__host__ __device__ int32_t multiply_integers(const IntArray<size>& arr)
 {
 	int32_t mul = 1;
 
-	for (uint32_t i = 0; i < size; i++)
+	for (int32_t i = 0; i < size; i++)
 	{
-		mul *= arr[i];
+		mul *= (int32_t)(arr[i]);
 	}
 
 	return mul;

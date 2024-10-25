@@ -1,14 +1,12 @@
-#include <deform_conv.h>
-#include <cpu/deform_conv_cpu.h>
+#include <torch/extension.h>
 #include <deform_conv_utils.h>
 #include <array_utils.h>
 
 #include <ATen/native/utils/ParamUtils.h>
+#include <ATen/autocast_mode.h>
 
-#ifdef WITH_CUDA
-#include <cuda/deform_conv_cuda.h>
-#endif
 
+template<int8_t dim>
 at::Tensor deform_conv_forward(
 	const at::Tensor& input,
 	const at::Tensor& weight,
@@ -18,71 +16,32 @@ at::Tensor deform_conv_forward(
 	at::IntArrayRef stride,
 	at::IntArrayRef padding,
 	at::IntArrayRef dilation,
-	const int32_t groups,
-	const int32_t offset_field_channels_per_groups,
-	const c10::optional<at::Tensor>& bias_opt
+	const int64_t groups,
+	const int64_t offset_field_channels_per_groups,
+	const at::Tensor& bias
 )
 {
-	c10::MaybeOwned<at::Tensor> bias_maybe_owned = at::borrow_from_optional_tensor(bias_opt);
-	const at::Tensor& bias = *bias_maybe_owned;
-
-	auto k = weight.dim();
-	int8_t dim = k - 2;
-
 	bool is_batched = input.dim() == dim + 2;
 	const at::Tensor batched_input = is_batched ? input.contiguous() : input.contiguous().unsqueeze(0);
 
 	TORCH_CHECK(dim > 0, "weight should have at least three dimensions");
 	TORCH_CHECK(groups > 0, "non-positive groups is not supported");
 
-	at::Tensor undefined;
+	// the function is located torch::ops::custom_op namespace.
+	std::string func_name = "custom_op::deform_conv";
+	func_name += std::to_string(dim) + "d_forward";
 
-	at::Backend backend = input.is_cuda() ? at::Backend::CUDA : at::Backend::CPU;
-
-	check_deform_conv_backend(
-		input,
-		weight,
-		offset_field,
-		attn_mask,
-		bias,
-		undefined,
-		backend
-	);
-
-	// the function pointer for each backend implementation
-	at::Tensor(*deform_conv_forward_func)(
-		const at::Tensor& input,
-		const at::Tensor& weight,
-		const at::Tensor& offset_field,
-		const at::Tensor& attn_mask,
-		at::IntArrayRef kernel_size,
-		at::IntArrayRef stride,
-		at::IntArrayRef padding,
-		at::IntArrayRef dilation,
-		const int32_t groups,
-		const int32_t offset_field_channels_per_groups,
-		const at::Tensor& bias) = nullptr;
-
-	if (input.is_cuda())
-	{
-#ifdef WITH_CUDA
-		deform_conv_forward_func = deform_conv_nd_forward_cuda;
-#endif // WITH_CUDA
-	}
-	else
-	{
-		deform_conv_forward_func = deform_conv_nd_forward_cpu;
-	}
-
-	TORCH_CHECK(deform_conv_forward_func != nullptr);
-	
+	static auto op = torch::Dispatcher::singleton()
+		.findSchemaOrThrow(func_name.c_str(), "")
+		.typed<decltype(deform_conv_forward<dim>)>();
+ 
 	at::Tensor output;
 
 	if (!torch::GradMode::is_enabled())
 	{
 		torch::NoGradGuard no_grad;
-		output = (*deform_conv_forward_func)(
-			batched_input,
+		output = op.call(
+			input,
 			weight,
 			offset_field,
 			attn_mask,
@@ -93,13 +52,12 @@ at::Tensor deform_conv_forward(
 			groups,
 			offset_field_channels_per_groups,
 			bias
-			);
+		);
 	}
-
 	else
 	{
-		output = (*deform_conv_forward_func)(
-			batched_input,
+		output = op.call(
+			input,
 			weight,
 			offset_field,
 			attn_mask,
@@ -110,13 +68,14 @@ at::Tensor deform_conv_forward(
 			groups,
 			offset_field_channels_per_groups,
 			bias
-			);
+		);
 	}
 
-	return is_batched ? std::move(output) : output.squeeze(0);
+	return (is_batched) ? output : output.squeeze(0);
 }
 
-std::vector<at::Tensor> deform_conv_backward(
+template<int8_t dim>
+torch::autograd::tensor_list deform_conv_backward(
 	const at::Tensor& input,
 	const at::Tensor& weight,
 	const at::Tensor& offset_field,
@@ -126,68 +85,32 @@ std::vector<at::Tensor> deform_conv_backward(
 	at::IntArrayRef stride,
 	at::IntArrayRef padding,
 	at::IntArrayRef dilation,
-	const int32_t groups,
-	const int32_t offset_field_channels_per_groups,
-	const c10::optional<at::Tensor>& bias_opt
+	const int64_t groups,
+	const int64_t offset_field_channels_per_groups,
+	const at::Tensor& bias
 )
 {
-	c10::MaybeOwned<at::Tensor> bias_maybe_owned = at::borrow_from_optional_tensor(bias_opt);
-	const at::Tensor& bias = *bias_maybe_owned;
-
-	auto k = weight.dim();
-	int8_t dim = k - 2;
-
 	bool is_batched = input.dim() == dim + 2;
 	const at::Tensor batched_input = is_batched ? input.contiguous() : input.contiguous().unsqueeze(0);
 
 	TORCH_CHECK(dim > 0, "weight should have at least three dimensions");
 	TORCH_CHECK(groups > 0, "non-positive groups is not supported");
 
-	at::Backend backend = input.is_cuda() ? at::Backend::CUDA : at::Backend::CPU;
+	// the function is located torch::ops::custom_op namespace.
+	std::string func_name = "custom_op::deform_conv";
+	func_name += std::to_string(dim) + "d_backward";
 
-	check_deform_conv_backend(
-		input,
-		weight,
-		offset_field,
-		attn_mask,
-		bias,
-		grad_output,
-		backend
-	);
+	static auto op = torch::Dispatcher::singleton()
+		.findSchemaOrThrow(func_name.c_str(), "")
+		.typed<decltype(deform_conv_backward<dim>)>();
 
-	// the function pointer for each backend implementation
-	std::vector<at::Tensor> (*deform_conv_backward_func)(
-		const at::Tensor & input,
-		const at::Tensor & weight,
-		const at::Tensor & offset_field,
-		const at::Tensor & attn_mask,
-		const at::Tensor & grad_output,
-		at::IntArrayRef kernel_size,
-		at::IntArrayRef stride,
-		at::IntArrayRef padding,
-		at::IntArrayRef dilation,
-		const int32_t groups,
-		const int32_t offset_field_channels_per_groups,
-		const at::Tensor& bias) = nullptr;
-
-	if (input.is_cuda())
-	{
-#ifdef WITH_CUDA
-		deform_conv_backward_func = deform_conv_nd_backward_cuda;
-#endif // WITH_CUDA
-	}
-	else
-	{
-		deform_conv_backward_func = deform_conv_nd_backward_cpu;
-	}
-
-	std::vector<at::Tensor> grads;
+	torch::autograd::tensor_list grads;
 
 	if (!torch::GradMode::is_enabled())
 	{
 		torch::NoGradGuard no_grad;
-		grads = deform_conv_backward_func(
-			batched_input,
+		grads = std::move(op.call(
+			input,
 			weight,
 			offset_field,
 			attn_mask,
@@ -199,13 +122,12 @@ std::vector<at::Tensor> deform_conv_backward(
 			groups,
 			offset_field_channels_per_groups,
 			bias
-		);
+		));
 	}
-
 	else
 	{
-		grads = deform_conv_backward_func(
-			batched_input,
+		grads = std::move(op.call(
+			input,
 			weight,
 			offset_field,
 			attn_mask,
@@ -217,7 +139,7 @@ std::vector<at::Tensor> deform_conv_backward(
 			groups,
 			offset_field_channels_per_groups,
 			bias
-		);
+		));
 	}
 
 	if (!is_batched)
@@ -228,4 +150,181 @@ std::vector<at::Tensor> deform_conv_backward(
 	}
 
 	return grads;
+}
+
+
+template<int8_t dim>// To supoort autograd.
+class DeformConvNdFunction : public torch::autograd::Function<DeformConvNdFunction<dim>>
+{
+public:
+	static at::Tensor forward(
+		torch::autograd::AutogradContext* ctx,
+		const at::Tensor& input,
+		const at::Tensor& weight,
+		const at::Tensor& offset_field,
+		const at::Tensor& attn_mask,
+		at::IntArrayRef kernel_size,
+		at::IntArrayRef stride,
+		at::IntArrayRef padding,
+		at::IntArrayRef dilation,
+		const int64_t groups,
+		const int64_t offset_field_channels_per_groups,
+		const at::Tensor& bias
+	) {
+		// at::AutoNonVariableTypeMode g; will deprecated 1.10 version.
+		at::AutoDispatchBelowADInplaceOrView g;
+
+		ctx->save_for_backward(
+			{ input, weight, offset_field, attn_mask, bias }
+		);
+
+		ctx->saved_data["kernel_size"] = kernel_size;
+		ctx->saved_data["stride"] = stride;
+		ctx->saved_data["padding"] = padding;
+		ctx->saved_data["dilation"] = dilation;
+		ctx->saved_data["groups"] = groups;
+		ctx->saved_data["offset_field_channels_per_groups"] = offset_field_channels_per_groups;
+
+		return deform_conv_forward<dim>(
+			input,
+			weight,
+			offset_field,
+			attn_mask,
+			kernel_size,
+			stride,
+			padding,
+			dilation,
+			groups,
+			offset_field_channels_per_groups,
+			bias
+		);
+	}
+
+	static torch::autograd::variable_list backward(
+		torch::autograd::AutogradContext* ctx,
+		torch::autograd::tensor_list grad_outputs
+	) {
+		at::Tensor grad_output = grad_outputs[0];
+		torch::autograd::tensor_list tensors = ctx->get_saved_variables();
+
+		return deform_conv_backward<dim>(
+			tensors[0],
+			tensors[1],
+			tensors[2],
+			tensors[3],
+			grad_output,
+			ctx->saved_data["kernel_size"].toIntVector(),
+			ctx->saved_data["stride"].toIntVector(),
+			ctx->saved_data["padding"].toIntVector(),
+			ctx->saved_data["dilation"].toIntVector(),
+			ctx->saved_data["groups"].toInt(),
+			ctx->saved_data["offset_field_channels_per_groups"].toInt(),
+			tensors[4]
+		);
+	}
+};
+
+template<int8_t dim>
+at::Tensor deform_conv_nd_autograd(
+	const at::Tensor& input,
+	const at::Tensor& weight,
+	const at::Tensor& offset_field,
+	const at::Tensor& attn_mask,
+	at::IntArrayRef kernel_size,
+	at::IntArrayRef stride,
+	at::IntArrayRef padding,
+	at::IntArrayRef dilation,
+	const int64_t groups,
+	const int64_t offset_field_channels_per_groups,
+	const at::Tensor& bias)
+{
+	return DeformConvNdFunction<dim>::apply(
+		input,
+		weight,
+		offset_field,
+		attn_mask,
+		kernel_size,
+		stride,
+		padding,
+		dilation,
+		groups,
+		offset_field_channels_per_groups,
+		bias
+	);
+}
+
+template<int8_t dim>
+at::Tensor deform_conv_nd_autocast(
+	const at::Tensor& input,
+	const at::Tensor& weight,
+	const at::Tensor& offset_field,
+	const at::Tensor& attn_mask,
+	at::IntArrayRef kernel_size,
+	at::IntArrayRef stride,
+	at::IntArrayRef padding,
+	at::IntArrayRef dilation,
+	const int64_t groups,
+	const int64_t offset_field_channels_per_groups,
+	const at::Tensor& bias)
+{
+	c10::impl::ExcludeDispatchKeyGuard no_autocast(c10::DispatchKey::Autocast);
+	c10::DeviceType device = input.device().type();
+	c10::ScalarType dtype;
+	if (device == c10::DeviceType::CUDA)
+	{
+		dtype = at::autocast::get_autocast_gpu_dtype();
+	}
+	else
+	{
+		dtype = at::autocast::get_autocast_cpu_dtype();
+	}
+	return deform_conv_nd_autograd<dim>(
+		at::autocast::cached_cast(dtype, input, device),
+		at::autocast::cached_cast(dtype, weight, device),
+		at::autocast::cached_cast(dtype, offset_field, device),
+		at::autocast::cached_cast(dtype, attn_mask, device),
+		kernel_size,
+		stride,
+		padding,
+		dilation,
+		groups,
+		offset_field_channels_per_groups,
+		at::autocast::cached_cast(dtype, bias, device)
+		);
+}
+
+TORCH_LIBRARY(custom_op, m)
+{
+	m.def("deform_conv1d(Tensor input, Tensor weight, Tensor offset_field, Tensor attn_mask, int[] kernel_size, int[] stride, int[] padding, int[] dilation, int groups, int offset_field_channels_per_groups, Tensor bias) -> Tensor");
+	m.def("deform_conv2d(Tensor input, Tensor weight, Tensor offset_field, Tensor attn_mask, int[] kernel_size, int[] stride, int[] padding, int[] dilation, int groups, int offset_field_channels_per_groups, Tensor bias) -> Tensor");
+	m.def("deform_conv3d(Tensor input, Tensor weight, Tensor offset_field, Tensor attn_mask, int[] kernel_size, int[] stride, int[] padding, int[] dilation, int groups, int offset_field_channels_per_groups, Tensor bias) -> Tensor");
+
+	m.def("deform_conv1d_forward(Tensor input, Tensor weight, Tensor offset_field, Tensor attn_mask, int[] kernel_size, int[] stride, int[] padding, int[] dilation, int groups, int offset_field_channels_per_groups, Tensor bias) -> Tensor");
+	m.def("deform_conv2d_forward(Tensor input, Tensor weight, Tensor offset_field, Tensor attn_mask, int[] kernel_size, int[] stride, int[] padding, int[] dilation, int groups, int offset_field_channels_per_groups, Tensor bias) -> Tensor");
+	m.def("deform_conv3d_forward(Tensor input, Tensor weight, Tensor offset_field, Tensor attn_mask, int[] kernel_size, int[] stride, int[] padding, int[] dilation, int groups, int offset_field_channels_per_groups, Tensor bias) -> Tensor");
+
+	m.def("deform_conv1d_backward(Tensor input, Tensor weight, Tensor offset_field, Tensor attn_mask, Tensor grad_output, int[] kernel_size, int[] stride, int[] padding, int[] dilation, int groups, int offset_field_channels_per_groups, Tensor bias) -> Tensor[]");
+	m.def("deform_conv2d_backward(Tensor input, Tensor weight, Tensor offset_field, Tensor attn_mask, Tensor grad_output, int[] kernel_size, int[] stride, int[] padding, int[] dilation, int groups, int offset_field_channels_per_groups, Tensor bias) -> Tensor[]");
+	m.def("deform_conv3d_backward(Tensor input, Tensor weight, Tensor offset_field, Tensor attn_mask, Tensor grad_output, int[] kernel_size, int[] stride, int[] padding, int[] dilation, int groups, int offset_field_channels_per_groups, Tensor bias) -> Tensor[]");
+}
+
+//TORCH_LIBRARY_IMPL(custom_op, Autograd, m)
+//{
+//	m.impl("deform_conv1d", &deform_conv_nd_autograd<1>);
+//	m.impl("deform_conv2d", &deform_conv_nd_autograd<2>);
+//	m.impl("deform_conv3d", &deform_conv_nd_autograd<3>);
+//}
+
+TORCH_LIBRARY_IMPL(custom_op, Autocast, m)
+{
+	m.impl("deform_conv1d", &deform_conv_nd_autocast<1>);
+	m.impl("deform_conv2d", &deform_conv_nd_autocast<2>);
+	m.impl("deform_conv3d", &deform_conv_nd_autocast<3>);
+}
+
+
+// Dummy to prevent python link error.
+PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
+{
+	m.doc() = "Pytorch implementation of deformable convolution Nd";
 }
