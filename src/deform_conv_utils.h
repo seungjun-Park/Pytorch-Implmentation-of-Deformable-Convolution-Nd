@@ -24,9 +24,36 @@ void check_deform_conv_shape(
 	at::IntArrayRef stride,
 	at::IntArrayRef padding,
 	at::IntArrayRef dilation,
-	int64_t groups,
+	const int64_t groups,
+	const int64_t offset_field_channels_per_groups,
 	const at::Tensor& bias
-);
+)
+{
+	auto input_shape = input.sizes();
+	auto weight_shape = weight.sizes();
+	auto offset_field_shape = offset_field.sizes();
+	auto attn_mask_shape = attn_mask.sizes();
+
+	TORCH_CHECK(input.dim() == 2 + dim);
+	TORCH_CHECK(weight.dim() == 2 + dim);
+	TORCH_CHECK(offset_field.dim() == 3 + dim);
+	TORCH_CHECK(attn_mask.dim() == 3 + dim);
+
+	TORCH_CHECK(kernel_size.size() == dim);
+	TORCH_CHECK(stride.size() == dim);
+	TORCH_CHECK(padding.size() == dim);
+	TORCH_CHECK(dilation.size() == dim);
+
+	TORCH_CHECK(groups > 0 && input_shape[1] % groups == 0);
+	TORCH_CHECK(offset_field_channels_per_groups * groups <= input_shape[1]);
+
+	TORCH_CHECK(weight_shape[1] == input_shape[1] / groups);
+
+	if (bias.defined())
+	{
+		TORCH_CHECK(bias.sizes()[0] == weight_shape[0]);
+	}
+}
 
 template <int64_t dim>
 std::vector<int64_t> get_output_size(

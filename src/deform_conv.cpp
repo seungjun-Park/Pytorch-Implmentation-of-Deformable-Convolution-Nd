@@ -254,7 +254,7 @@ at::Tensor deform_conv_nd_autograd(
 }
 
 template<int8_t dim>
-at::Tensor deform_conv_nd_autocast(
+at::Tensor deform_conv_nd_autocast_cpu(
 	const at::Tensor& input,
 	const at::Tensor& weight,
 	const at::Tensor& offset_field,
@@ -269,15 +269,7 @@ at::Tensor deform_conv_nd_autocast(
 {
 	c10::impl::ExcludeDispatchKeyGuard no_autocast(c10::DispatchKey::Autocast);
 	c10::DeviceType device = input.device().type();
-	c10::ScalarType dtype;
-	if (device == c10::DeviceType::CUDA)
-	{
-		dtype = at::autocast::get_autocast_gpu_dtype();
-	}
-	else
-	{
-		dtype = at::autocast::get_autocast_cpu_dtype();
-	}
+	c10::ScalarType dtype = at::autocast::get_autocast_cpu_dtype();
 	return deform_conv_nd_autograd<dim>(
 		at::autocast::cached_cast(dtype, input, device),
 		at::autocast::cached_cast(dtype, weight, device),
@@ -291,6 +283,38 @@ at::Tensor deform_conv_nd_autocast(
 		offset_field_channels_per_groups,
 		at::autocast::cached_cast(dtype, bias, device)
 		);
+}
+
+template<int8_t dim>
+at::Tensor deform_conv_nd_autocast_cuda(
+	const at::Tensor& input,
+	const at::Tensor& weight,
+	const at::Tensor& offset_field,
+	const at::Tensor& attn_mask,
+	at::IntArrayRef kernel_size,
+	at::IntArrayRef stride,
+	at::IntArrayRef padding,
+	at::IntArrayRef dilation,
+	const int64_t groups,
+	const int64_t offset_field_channels_per_groups,
+	const at::Tensor& bias)
+{
+	c10::impl::ExcludeDispatchKeyGuard no_autocast(c10::DispatchKey::Autocast);
+	c10::DeviceType device = input.device().type();
+	c10::ScalarType dtype = dtype = at::autocast::get_autocast_gpu_dtype();
+	return deform_conv_nd_autograd<dim>(
+		at::autocast::cached_cast(dtype, input, device),
+		at::autocast::cached_cast(dtype, weight, device),
+		at::autocast::cached_cast(dtype, offset_field, device),
+		at::autocast::cached_cast(dtype, attn_mask, device),
+		kernel_size,
+		stride,
+		padding,
+		dilation,
+		groups,
+		offset_field_channels_per_groups,
+		at::autocast::cached_cast(dtype, bias, device)
+	);
 }
 
 TORCH_LIBRARY(custom_op, m)
@@ -308,18 +332,25 @@ TORCH_LIBRARY(custom_op, m)
 	m.def("deform_conv3d_backward(Tensor input, Tensor weight, Tensor offset_field, Tensor attn_mask, Tensor grad_output, int[] kernel_size, int[] stride, int[] padding, int[] dilation, int groups, int offset_field_channels_per_groups, Tensor bias) -> Tensor[]");
 }
 
-//TORCH_LIBRARY_IMPL(custom_op, Autograd, m)
-//{
-//	m.impl("deform_conv1d", &deform_conv_nd_autograd<1>);
-//	m.impl("deform_conv2d", &deform_conv_nd_autograd<2>);
-//	m.impl("deform_conv3d", &deform_conv_nd_autograd<3>);
-//}
-
-TORCH_LIBRARY_IMPL(custom_op, Autocast, m)
+TORCH_LIBRARY_IMPL(custom_op, Autograd, m)
 {
-	m.impl("deform_conv1d", &deform_conv_nd_autocast<1>);
-	m.impl("deform_conv2d", &deform_conv_nd_autocast<2>);
-	m.impl("deform_conv3d", &deform_conv_nd_autocast<3>);
+	m.impl("deform_conv1d", &deform_conv_nd_autograd<1>);
+	m.impl("deform_conv2d", &deform_conv_nd_autograd<2>);
+	m.impl("deform_conv3d", &deform_conv_nd_autograd<3>);
+}
+
+TORCH_LIBRARY_IMPL(custom_op, AutocastCPU, m)
+{
+	m.impl("deform_conv1d", &deform_conv_nd_autocast_cpu<1>);
+	m.impl("deform_conv2d", &deform_conv_nd_autocast_cpu<2>);
+	m.impl("deform_conv3d", &deform_conv_nd_autocast_cpu<3>);
+}
+
+TORCH_LIBRARY_IMPL(custom_op, AutocastCUDA, m)
+{
+	m.impl("deform_conv1d", &deform_conv_nd_autocast_cuda<1>);
+	m.impl("deform_conv2d", &deform_conv_nd_autocast_cuda<2>);
+	m.impl("deform_conv3d", &deform_conv_nd_autocast_cuda<3>);
 }
 
 
@@ -328,3 +359,4 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
 {
 	m.doc() = "Pytorch implementation of deformable convolution Nd";
 }
+

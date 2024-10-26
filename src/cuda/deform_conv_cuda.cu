@@ -296,7 +296,13 @@ torch::autograd::tensor_list deform_conv_nd_backward_cuda(
 		}
 	});
 
-	return { grad_input, grad_weight, grad_offset_field, grad_attn_mask, grad_bias };
+	at::Tensor undefined;
+
+	return {
+		grad_input, grad_weight, grad_offset_field, grad_attn_mask,
+		undefined, undefined, undefined, undefined, undefined, undefined,
+		grad_bias
+	};
 }
 
 TORCH_LIBRARY_IMPL(custom_op, CUDA, m)
