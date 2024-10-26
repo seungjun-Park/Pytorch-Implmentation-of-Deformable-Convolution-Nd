@@ -189,7 +189,7 @@ class DeformConv2d(nn.Module):
 
         self.offset_field = nn.Conv2d(
             in_channels=in_channels,
-            out_channels=groups * offset_field_channels_per_groups * kernel_sizes,
+            out_channels=2 * groups * offset_field_channels_per_groups * kernel_sizes,
             kernel_size=kernel_size_off,
             stride=stride_off,
             padding=padding_off,
@@ -298,7 +298,7 @@ class DeformConv3d(nn.Module):
 
         self.attn_mask = nn.Conv3d(
             in_channels=in_channels,
-            out_channels=groups * offset_field_channels_per_groups * kernel_sizes,
+            out_channels=3 * groups * offset_field_channels_per_groups * kernel_sizes,
             kernel_size=kernel_size_off,
             stride=stride_off,
             padding=padding_off,
