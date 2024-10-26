@@ -13,7 +13,7 @@ please see original implementation
 - Support torch.no_grad().
 - Support torch.autocast().
 - Support torch.autograd().  
-- Support 1d ~ Nd implement. (maximum dimension is 127).       
+- Support 1d ~ 3d implement. (if you want to use over 3d, you just add dimension which you wanted TORCH_LIBRARY_IMPL in deform_conv.cpp)     
 - Support offset_feild_channel_per_groups params. (if this value is 1, then it is equal to paper version)  
 
 ## Papers   
