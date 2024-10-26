@@ -30,12 +30,12 @@ def get_extension():
     if torch.cuda.is_available() and CUDA_HOME is not None:
         extension = CUDAExtension
         sources += source_cuda
-        extra_compile_args['nvcc'] = [
-            "-DCUDA_HAS_FP16=1",
-            "-D__CUDA_NO_HALF_OPERATOR__",
-            "-D__CUDA_NO_HALF_CONVERSIONS__",
-            "-D__CUDA_NO_HALF2_OPERATORS__",
-        ]
+        # extra_compile_args['nvcc'] = [
+        #     "-DCUDA_HAS_FP16=1",
+        #     "-D__CUDA_NO_HALF_OPERATOR__",
+        #     "-D__CUDA_NO_HALF_CONVERSIONS__",
+        #     "-D__CUDA_NO_HALF2_OPERATORS__",
+        # ]
 
     sources = [os.path.join(extensions_dir, s) for s in sources]
     include_dirs = [extensions_dir]
