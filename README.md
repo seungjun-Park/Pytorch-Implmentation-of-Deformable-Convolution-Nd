@@ -63,12 +63,12 @@ with torch.cuda.amp.autocast(dtype=torch.bfloat16):
         weight,
         offset_field,
         attn_mask,
-        (3, 3),
-        (1, 1),
-        (1, 1),
-        (1, 1),
-        2,
-        8,
+        (3, 3),   // kernel_size
+        (1, 1),   // stride
+        (1, 1),   // padding
+        (1, 1),   // dilation
+        2,        // groups
+        8,        // offset_field_channels_per_groups
         bias,
     )
 
