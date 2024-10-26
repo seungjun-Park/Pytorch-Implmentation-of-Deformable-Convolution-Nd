@@ -37,6 +37,7 @@ please see original implementation [here](https://github.com/msracver/Deformable
   
 ## Build
 ```python
+conda activate {your envirionment name}
 python setup.py build install
 ```
 
