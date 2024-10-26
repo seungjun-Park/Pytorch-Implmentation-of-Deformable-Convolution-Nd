@@ -8,7 +8,7 @@ please see original implementation
 
 ## Release note  
 
-- Support fp16. (cuda compute capability >= 7.0 && only gpu available)
+- Support fp16. (cuda compute capability >= 7.0 && only gpu available, but when use fp16, it often occurs over/underflow problem. please use bfp16 instead.)  
 - Support bfp16. (cuda compute capability >= 8.0)  
 - Support torch.no_grad().
 - Support torch.autocast().
