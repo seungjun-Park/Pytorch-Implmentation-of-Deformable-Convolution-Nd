@@ -11,7 +11,8 @@ please see original implementation
 - Support fp16. (cuda compute capability >= 7.0 && only gpu available)
 - Support bfp16. (cuda compute capability >= 8.0)  
 - Support torch.no_grad().
-- Support torch.autocast().  
+- Support torch.autocast().
+- Support torch.autograd().  
 - Support 1d ~ Nd implement. (maximum dimension is 127).       
 - Support offset_feild_channel_per_groups params. (if this value is 1, then it is equal to paper version)  
 
