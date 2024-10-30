@@ -37,7 +37,7 @@ please see original implementation
   
 ## Build
 ```python
-conda activate {your envirionment name}
+(Optional) conda activate {your envirionment name}
 python setup.py build install
 ```
 
