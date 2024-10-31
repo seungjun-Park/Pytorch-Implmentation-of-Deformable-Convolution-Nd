@@ -6,6 +6,8 @@ please see original implementation
 [DCNV2](https://github.com/msracver/Deformable-ConvNets)  
 [DCNV4](https://github.com/OpenGVLab/DCNv4)  
 
+Model example: please see [here](https://github.com/seungjun-Park/Deformable-Edge-Detector)  
+
 ## Support  
 
 - fp16. (cuda compute capability >= 7.0 && only gpu available, but when use fp16, it often occurs over/underflow problem. please use bfp16 instead.)  
