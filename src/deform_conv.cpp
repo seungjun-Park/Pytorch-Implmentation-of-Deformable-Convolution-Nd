@@ -1,6 +1,7 @@
 #include <torch/extension.h>
 #include <deform_conv_utils.h>
 #include <array_utils.h>
+#include <type_utils.h>
 
 #include <ATen/native/utils/ParamUtils.h>
 #include <ATen/autocast_mode.h>
@@ -17,7 +18,7 @@ at::Tensor deform_conv_forward(
 	at::IntArrayRef padding,
 	at::IntArrayRef dilation,
 	const int64_t groups,
-	const int64_t offset_field_channels_per_groups,
+	const int64_t deformable_groups,
 	const at::Tensor& bias
 )
 {
@@ -50,7 +51,7 @@ at::Tensor deform_conv_forward(
 			at::native::expand_param_if_needed(padding, "padding", dim),
 			at::native::expand_param_if_needed(dilation, "dilation", dim),
 			groups,
-			offset_field_channels_per_groups,
+			deformable_groups,
 			bias
 		);
 	}
@@ -66,7 +67,7 @@ at::Tensor deform_conv_forward(
 			at::native::expand_param_if_needed(padding, "padding", dim),
 			at::native::expand_param_if_needed(dilation, "dilation", dim),
 			groups,
-			offset_field_channels_per_groups,
+			deformable_groups,
 			bias
 		);
 	}
@@ -86,7 +87,7 @@ torch::autograd::tensor_list deform_conv_backward(
 	at::IntArrayRef padding,
 	at::IntArrayRef dilation,
 	const int64_t groups,
-	const int64_t offset_field_channels_per_groups,
+	const int64_t deformable_groups,
 	const at::Tensor& bias
 )
 {
@@ -120,7 +121,7 @@ torch::autograd::tensor_list deform_conv_backward(
 			at::native::expand_param_if_needed(padding, "padding", dim),
 			at::native::expand_param_if_needed(dilation, "dilation", dim),
 			groups,
-			offset_field_channels_per_groups,
+			deformable_groups,
 			bias
 		));
 	}
@@ -137,7 +138,7 @@ torch::autograd::tensor_list deform_conv_backward(
 			at::native::expand_param_if_needed(padding, "padding", dim),
 			at::native::expand_param_if_needed(dilation, "dilation", dim),
 			groups,
-			offset_field_channels_per_groups,
+			deformable_groups,
 			bias
 		));
 	}
@@ -168,7 +169,7 @@ public:
 		at::IntArrayRef padding,
 		at::IntArrayRef dilation,
 		const int64_t groups,
-		const int64_t offset_field_channels_per_groups,
+		const int64_t deformable_groups,
 		const at::Tensor& bias
 	) {
 		// at::AutoNonVariableTypeMode g; will deprecated 1.10 version.
@@ -183,7 +184,7 @@ public:
 		ctx->saved_data["padding"] = padding;
 		ctx->saved_data["dilation"] = dilation;
 		ctx->saved_data["groups"] = groups;
-		ctx->saved_data["offset_field_channels_per_groups"] = offset_field_channels_per_groups;
+		ctx->saved_data["deformable_groups"] = deformable_groups;
 
 		return deform_conv_forward<dim>(
 			input,
@@ -195,7 +196,7 @@ public:
 			padding,
 			dilation,
 			groups,
-			offset_field_channels_per_groups,
+			deformable_groups,
 			bias
 		);
 	}
@@ -218,7 +219,7 @@ public:
 			ctx->saved_data["padding"].toIntVector(),
 			ctx->saved_data["dilation"].toIntVector(),
 			ctx->saved_data["groups"].toInt(),
-			ctx->saved_data["offset_field_channels_per_groups"].toInt(),
+			ctx->saved_data["deformable_groups"].toInt(),
 			tensors[4]
 		);
 	}
@@ -235,7 +236,7 @@ at::Tensor deform_conv_nd_autograd(
 	at::IntArrayRef padding,
 	at::IntArrayRef dilation,
 	const int64_t groups,
-	const int64_t offset_field_channels_per_groups,
+	const int64_t deformable_groups,
 	const at::Tensor& bias)
 {
 	return DeformConvNdFunction<dim>::apply(
@@ -248,7 +249,7 @@ at::Tensor deform_conv_nd_autograd(
 		padding,
 		dilation,
 		groups,
-		offset_field_channels_per_groups,
+		deformable_groups,
 		bias
 	);
 }
@@ -264,7 +265,7 @@ at::Tensor deform_conv_nd_autocast_cpu(
 	at::IntArrayRef padding,
 	at::IntArrayRef dilation,
 	const int64_t groups,
-	const int64_t offset_field_channels_per_groups,
+	const int64_t deformable_groups,
 	const at::Tensor& bias)
 {
 	c10::impl::ExcludeDispatchKeyGuard no_autocast(c10::DispatchKey::Autocast);
@@ -280,7 +281,7 @@ at::Tensor deform_conv_nd_autocast_cpu(
 		padding,
 		dilation,
 		groups,
-		offset_field_channels_per_groups,
+		deformable_groups,
 		at::autocast::cached_cast(dtype, bias, device)
 		);
 }
@@ -296,12 +297,12 @@ at::Tensor deform_conv_nd_autocast_cuda(
 	at::IntArrayRef padding,
 	at::IntArrayRef dilation,
 	const int64_t groups,
-	const int64_t offset_field_channels_per_groups,
+	const int64_t deformable_groups,
 	const at::Tensor& bias)
 {
 	c10::impl::ExcludeDispatchKeyGuard no_autocast(c10::DispatchKey::Autocast);
 	c10::DeviceType device = input.device().type();
-	c10::ScalarType dtype = dtype = at::autocast::get_autocast_gpu_dtype();
+	c10::ScalarType dtype = at::autocast::get_autocast_gpu_dtype();
 	return deform_conv_nd_autograd<dim>(
 		at::autocast::cached_cast(dtype, input, device),
 		at::autocast::cached_cast(dtype, weight, device),
@@ -312,24 +313,24 @@ at::Tensor deform_conv_nd_autocast_cuda(
 		padding,
 		dilation,
 		groups,
-		offset_field_channels_per_groups,
+		deformable_groups,
 		at::autocast::cached_cast(dtype, bias, device)
 	);
 }
 
 TORCH_LIBRARY(custom_op, m)
 {
-	m.def("deform_conv1d(Tensor input, Tensor weight, Tensor offset_field, Tensor attn_mask, int[] kernel_size, int[] stride, int[] padding, int[] dilation, int groups, int offset_field_channels_per_groups, Tensor bias) -> Tensor");
-	m.def("deform_conv2d(Tensor input, Tensor weight, Tensor offset_field, Tensor attn_mask, int[] kernel_size, int[] stride, int[] padding, int[] dilation, int groups, int offset_field_channels_per_groups, Tensor bias) -> Tensor");
-	m.def("deform_conv3d(Tensor input, Tensor weight, Tensor offset_field, Tensor attn_mask, int[] kernel_size, int[] stride, int[] padding, int[] dilation, int groups, int offset_field_channels_per_groups, Tensor bias) -> Tensor");
+	m.def("deform_conv1d(Tensor input, Tensor weight, Tensor offset_field, Tensor attn_mask, int[] kernel_size, int[] stride, int[] padding, int[] dilation, int groups, int deformable_groups, Tensor bias) -> Tensor");
+	m.def("deform_conv2d(Tensor input, Tensor weight, Tensor offset_field, Tensor attn_mask, int[] kernel_size, int[] stride, int[] padding, int[] dilation, int groups, int deformable_groups, Tensor bias) -> Tensor");
+	m.def("deform_conv3d(Tensor input, Tensor weight, Tensor offset_field, Tensor attn_mask, int[] kernel_size, int[] stride, int[] padding, int[] dilation, int groups, int deformable_groups, Tensor bias) -> Tensor");
 
-	m.def("deform_conv1d_forward(Tensor input, Tensor weight, Tensor offset_field, Tensor attn_mask, int[] kernel_size, int[] stride, int[] padding, int[] dilation, int groups, int offset_field_channels_per_groups, Tensor bias) -> Tensor");
-	m.def("deform_conv2d_forward(Tensor input, Tensor weight, Tensor offset_field, Tensor attn_mask, int[] kernel_size, int[] stride, int[] padding, int[] dilation, int groups, int offset_field_channels_per_groups, Tensor bias) -> Tensor");
-	m.def("deform_conv3d_forward(Tensor input, Tensor weight, Tensor offset_field, Tensor attn_mask, int[] kernel_size, int[] stride, int[] padding, int[] dilation, int groups, int offset_field_channels_per_groups, Tensor bias) -> Tensor");
+	m.def("deform_conv1d_forward(Tensor input, Tensor weight, Tensor offset_field, Tensor attn_mask, int[] kernel_size, int[] stride, int[] padding, int[] dilation, int groups, int deformable_groups, Tensor bias) -> Tensor");
+	m.def("deform_conv2d_forward(Tensor input, Tensor weight, Tensor offset_field, Tensor attn_mask, int[] kernel_size, int[] stride, int[] padding, int[] dilation, int groups, int deformable_groups, Tensor bias) -> Tensor");
+	m.def("deform_conv3d_forward(Tensor input, Tensor weight, Tensor offset_field, Tensor attn_mask, int[] kernel_size, int[] stride, int[] padding, int[] dilation, int groups, int deformable_groups, Tensor bias) -> Tensor");
 
-	m.def("deform_conv1d_backward(Tensor input, Tensor weight, Tensor offset_field, Tensor attn_mask, Tensor grad_output, int[] kernel_size, int[] stride, int[] padding, int[] dilation, int groups, int offset_field_channels_per_groups, Tensor bias) -> Tensor[]");
-	m.def("deform_conv2d_backward(Tensor input, Tensor weight, Tensor offset_field, Tensor attn_mask, Tensor grad_output, int[] kernel_size, int[] stride, int[] padding, int[] dilation, int groups, int offset_field_channels_per_groups, Tensor bias) -> Tensor[]");
-	m.def("deform_conv3d_backward(Tensor input, Tensor weight, Tensor offset_field, Tensor attn_mask, Tensor grad_output, int[] kernel_size, int[] stride, int[] padding, int[] dilation, int groups, int offset_field_channels_per_groups, Tensor bias) -> Tensor[]");
+	m.def("deform_conv1d_backward(Tensor input, Tensor weight, Tensor offset_field, Tensor attn_mask, Tensor grad_output, int[] kernel_size, int[] stride, int[] padding, int[] dilation, int groups, int deformable_groups, Tensor bias) -> Tensor[]");
+	m.def("deform_conv2d_backward(Tensor input, Tensor weight, Tensor offset_field, Tensor attn_mask, Tensor grad_output, int[] kernel_size, int[] stride, int[] padding, int[] dilation, int groups, int deformable_groups, Tensor bias) -> Tensor[]");
+	m.def("deform_conv3d_backward(Tensor input, Tensor weight, Tensor offset_field, Tensor attn_mask, Tensor grad_output, int[] kernel_size, int[] stride, int[] padding, int[] dilation, int groups, int deformable_groups, Tensor bias) -> Tensor[]");
 }
 
 TORCH_LIBRARY_IMPL(custom_op, Autograd, m)
@@ -359,4 +360,3 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
 {
 	m.doc() = "Pytorch implementation of deformable convolution Nd";
 }
-

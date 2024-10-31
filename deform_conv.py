@@ -7,6 +7,7 @@ import custom_op
 from collections import abc
 from typing import Union, List, Tuple
 
+
 def _ntuple(n):
     def parse(x) -> Tuple:
         if isinstance(x, abc.Iterable) and not isinstance(x, str):
@@ -69,7 +70,7 @@ class DeformConv1d(nn.Module):
                  ):
         super().__init__()
 
-        assert in_channels % groups == 0 and out_channels % groups == 0 and (in_channels // groups) % deformable_groups == 0
+        assert in_channels % groups == 0 and out_channels % groups == 0 and in_channels % (groups * deformable_groups) == 0
 
         self.dim = 1
 
@@ -95,7 +96,7 @@ class DeformConv1d(nn.Module):
 
         self.offset_field = nn.Conv1d(
             in_channels=in_channels,
-            out_channels=(in_channels // deformable_groups) * kernel_sizes * self.dim,
+            out_channels=groups * deformable_groups * kernel_sizes * self.dim,
             kernel_size=kernel_size_off,
             stride=stride_off,
             padding=padding_off,
@@ -106,7 +107,7 @@ class DeformConv1d(nn.Module):
 
         self.attn_mask = nn.Conv1d(
             in_channels=in_channels,
-            out_channels=(in_channels // deformable_groups) * kernel_sizes,
+            out_channels=groups * deformable_groups * kernel_sizes * self.dim,
             kernel_size=kernel_size_off,
             stride=stride_off,
             padding=padding_off,
@@ -169,7 +170,7 @@ class DeformConv2d(nn.Module):
                  ):
         super().__init__()
 
-        assert in_channels % groups == 0 and out_channels % groups == 0 and (in_channels // groups) % deformable_groups == 0
+        assert in_channels % groups == 0 and out_channels % groups == 0 and in_channels % (groups * deformable_groups) == 0
 
         self.dim = 2
 
@@ -194,7 +195,7 @@ class DeformConv2d(nn.Module):
 
         self.offset_field = nn.Conv2d(
             in_channels=in_channels,
-            out_channels=(in_channels // deformable_groups) * kernel_sizes * self.dim,
+            out_channels=groups * deformable_groups * kernel_sizes * self.dim,
             kernel_size=kernel_size_off,
             stride=stride_off,
             padding=padding_off,
@@ -205,7 +206,7 @@ class DeformConv2d(nn.Module):
 
         self.attn_mask = nn.Conv2d(
             in_channels=in_channels,
-            out_channels=(in_channels // deformable_groups) * kernel_sizes,
+            out_channels=groups * deformable_groups * kernel_sizes,
             kernel_size=kernel_size_off,
             stride=stride_off,
             padding=padding_off,
@@ -268,7 +269,7 @@ class DeformConv3d(nn.Module):
                  ):
         super().__init__()
 
-        assert in_channels % groups == 0 and out_channels % groups == 0 and (in_channels // groups) % deformable_groups == 0
+        assert in_channels % groups == 0 and out_channels % groups == 0 and in_channels % (groups * deformable_groups) == 0
 
         self.dim = 3
 
@@ -294,7 +295,7 @@ class DeformConv3d(nn.Module):
 
         self.offset_field = nn.Conv3d(
             in_channels=in_channels,
-            out_channels=(in_channels // deformable_groups) * kernel_sizes * self.dim,
+            out_channels=groups * deformable_groups * kernel_sizes * self.dim,
             kernel_size=kernel_size_off,
             stride=stride_off,
             padding=padding_off,
@@ -305,7 +306,7 @@ class DeformConv3d(nn.Module):
 
         self.attn_mask = nn.Conv3d(
             in_channels=in_channels,
-            out_channels=(in_channels // deformable_groups) * kernel_sizes,
+            out_channels=groups * deformable_groups * kernel_sizes,
             kernel_size=kernel_size_off,
             stride=stride_off,
             padding=padding_off,

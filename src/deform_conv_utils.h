@@ -37,7 +37,7 @@ void check_deform_conv_shape(
 	TORCH_CHECK(input.dim() == 2 + dim);
 	TORCH_CHECK(weight.dim() == 2 + dim);
 	TORCH_CHECK(offset_field.dim() == 3 + dim);
-	TORCH_CHECK(attn_mask.dim() == 3 + dim);
+	TORCH_CHECK(attn_mask.dim() == 2 + dim);
 
 	TORCH_CHECK(kernel_size.size() == dim);
 	TORCH_CHECK(stride.size() == dim);

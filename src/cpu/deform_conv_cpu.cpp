@@ -18,11 +18,11 @@ at::Tensor deform_conv_nd_forward_cpu(
 	at::IntArrayRef padding,
 	at::IntArrayRef dilation,
 	const int64_t groups,
-	const int64_t offset_field_channels_per_groups,
+	const int64_t deformable_groups,
 	const at::Tensor& bias) 
 {
 	auto k = weight.dim();
-	int8_t tensor_dim = k - 2;
+	int64_t tensor_dim = k - 2;
 
 	TORCH_CHECK(dim == tensor_dim);
 
@@ -44,16 +44,16 @@ at::Tensor deform_conv_nd_forward_cpu(
 	auto input_size = input.sizes();
 	auto output_size = output.sizes();
 
-	int32_t batch_size = input.size(0);
-	int32_t in_channels = input.size(1);
-	int32_t out_channels = weight.size(0);
-	int32_t grouped_in_channels = in_channels / groups;
-	int32_t grouped_out_channels = out_channels / groups;
+	int64_t batch_size = input.size(0);
+	int64_t in_channels = input.size(1);
+	int64_t out_channels = weight.size(0);
+	int64_t grouped_in_channels = in_channels / groups;
+	int64_t grouped_out_channels = out_channels / groups;
 
-	int32_t kernel_sizes = c10::multiply_integers(kernel_size);
-	int32_t output_sizes = c10::multiply_integers(output_size.slice(2));
+	int64_t kernel_sizes = c10::multiply_integers(kernel_size);
+	int64_t output_sizes = c10::multiply_integers(output_size.slice(2));
 
-	at::Tensor columns = at::zeros({ groups, kernel_sizes * grouped_in_channels, output_sizes }, input.options().memory_format(at::MemoryFormat::Contiguous));
+	at::Tensor columns = at::zeros({ groups, grouped_in_channels * kernel_sizes, output_sizes }, input.options().memory_format(at::MemoryFormat::Contiguous));
 
 	AT_DISPATCH_FLOATING_TYPES_AND(at::kBFloat16, input.scalar_type(), "deform_conv_nd_forward<>", [&]() {
 
@@ -64,7 +64,6 @@ at::Tensor deform_conv_nd_forward_cpu(
 			at::Tensor input_n = input.select(0, b);
 			at::Tensor offset_field_n = offset_field.select(0, b);
 			at::Tensor attn_mask_n = attn_mask.select(0, b);
-
 			im2col_nd_cpu<scalar_t, dim>(
 				input_n.const_data_ptr<scalar_t>(),
 				offset_field_n.const_data_ptr<scalar_t>(),
@@ -77,11 +76,10 @@ at::Tensor deform_conv_nd_forward_cpu(
 				IntArrayRef2IntArray<dim>(padding),
 				IntArrayRef2IntArray<dim>(dilation),
 				groups,
-				offset_field_channels_per_groups,
+				deformable_groups,
 				columns.mutable_data_ptr<scalar_t>()
 			);
 
-			// torch::bmm was not implemented for fp16 in cpu, so we convert fp16 to fp32
 			output.select(0, b) = torch::bmm(
 				weight.reshape({ groups, grouped_out_channels, -1 }),
 				columns
@@ -110,11 +108,11 @@ torch::autograd::tensor_list deform_conv_nd_backward_cpu(
 	at::IntArrayRef padding,
 	at::IntArrayRef dilation,
 	const int64_t groups,
-	const int64_t offset_field_channels_per_groups,
+	const int64_t deformable_groups,
 	const at::Tensor& bias) {
 
 	auto k = weight.dim();
-	int8_t tensor_dim = k - 2;
+	int64_t tensor_dim = k - 2;
 
 	TORCH_CHECK(dim == tensor_dim);
 
@@ -139,14 +137,14 @@ torch::autograd::tensor_list deform_conv_nd_backward_cpu(
 	auto input_size = input.sizes();
 	auto output_size = output.sizes();
 
-	int32_t batch_size = input.size(0);
-	int32_t in_channels = input.size(1);
-	int32_t out_channels = weight.size(0);
-	int32_t grouped_in_channels = in_channels / groups;
-	int32_t grouped_out_channels = out_channels / groups;
+	int64_t batch_size = input.size(0);
+	int64_t in_channels = input.size(1);
+	int64_t out_channels = weight.size(0);
+	int64_t grouped_in_channels = in_channels / groups;
+	int64_t grouped_out_channels = out_channels / groups;
 
-	int32_t kernel_sizes = c10::multiply_integers(kernel_size);
-	int32_t output_sizes = c10::multiply_integers(output_size.slice(2));
+	int64_t kernel_sizes = c10::multiply_integers(kernel_size);
+	int64_t output_sizes = c10::multiply_integers(output_size.slice(2));
 
 	AT_DISPATCH_FLOATING_TYPES_AND(at::kBFloat16, input.scalar_type(), "deform_conv_nd_backward<>", [&]() {
 
@@ -164,7 +162,6 @@ torch::autograd::tensor_list deform_conv_nd_backward_cpu(
 			at::Tensor grad_output_n = grad_output.select(0, b);
 
 			// compute col = weight^T * grad_output 
-			// torch::bmm was not implemented for fp16 in cpu, so we convert fp16 to fp32
 			at::Tensor columns = torch::bmm(
 				weight.reshape({ groups, grouped_out_channels, -1 }).transpose(1, 2),
 				grad_output_n.reshape({ groups, grouped_out_channels, -1 })
@@ -184,7 +181,7 @@ torch::autograd::tensor_list deform_conv_nd_backward_cpu(
 				IntArrayRef2IntArray<dim>(padding),
 				IntArrayRef2IntArray<dim>(dilation),
 				groups,
-				offset_field_channels_per_groups,
+				deformable_groups,
 				(mapped_type<scalar_t>*)grad_input_n.mutable_data_ptr<scalar_t>(),
 				(mapped_type<scalar_t>*)grad_offset_field_n.mutable_data_ptr<scalar_t>(),
 				(mapped_type<scalar_t>*)grad_attn_mask_n.mutable_data_ptr<scalar_t>()
@@ -204,12 +201,11 @@ torch::autograd::tensor_list deform_conv_nd_backward_cpu(
 				IntArrayRef2IntArray<dim>(padding),
 				IntArrayRef2IntArray<dim>(dilation),
 				groups,
-				offset_field_channels_per_groups,
+				deformable_groups,
 				columns.mutable_data_ptr<scalar_t>()
 			);
 
 			// compute grad_out grad_output * col^T
-			// torch::bmm was not implemented for fp16 in cpu, so we convert fp16 to fp32
 			grad_weight += torch::bmm(
 				grad_output_n.reshape({ groups, grouped_out_channels, -1 }),
 				columns.transpose(1, 2)

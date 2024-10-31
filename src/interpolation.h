@@ -28,23 +28,23 @@ linear_interp_nd(
         ratios[i] = coord[i] - coords[i];
     }
 
-    constexpr int32_t num_points = 1 << dim;
-    int32_t indice[dim] = { 0, };
+    constexpr int64_t num_points = 1 << dim;
+    int64_t indice[dim] = { 0, };
     // 0 means low, 1 means high coord.
-    int32_t elements[2] = { 0, 1 };
+    int64_t elements[2] = { 0, 1 };
 
     T val = 0;
 
     // compute points with repeated permutation.
-    for (int32_t idx = 0; idx < num_points; idx++)
+    for (int64_t idx = 0; idx < num_points; idx++)
     {
-        int32_t div = 1;
-        int32_t data_idx = 0;
+        int64_t div = 1;
+        int64_t data_idx = 0;
         T weight = 1;
         bool is_valid_data = true;
         for (int8_t i = dim - 1; i >= 0; i--)
         {
-            int32_t current_coord = coords[elements[indice[i]] * dim + i];
+            int64_t current_coord = coords[elements[indice[i]] * dim + i];
             if (current_coord < 0 || current_coord >= data_size[i])
             {
                 is_valid_data = false;
@@ -81,7 +81,7 @@ linear_interp_nd(
 }
 
 // linear interpolation
-template<typename T, int8_t dim>
+template<typename T, uint8_t dim>
 __host__ __device__
 typename std::enable_if<(dim == 1), T>::type
 linear_interp_nd(
@@ -93,9 +93,9 @@ linear_interp_nd(
     /// coord: 1d floating-point coordinate.
     /// data_size: size of data to each dimension. 
 
-    int32_t low = floor(coord[0]);
-    int32_t high = low + 1;
-
+    int64_t low = floor(coord[0]);
+    int64_t high = low + 1;
+    
     // ratio
     T ratio = coord[0] - low;
 
@@ -126,11 +126,10 @@ linear_interp_nd(
     /// coord: 2d floating-point coordinate.
     /// data_size: size of data to each dimension. 
 
-    int32_t h_low = floor(coord[0]);
-    int32_t h_high = h_low + 1;
-
-    int32_t w_low = floor(coord[1]);
-    int32_t w_high = w_low + 1;
+    int64_t h_low = floor(coord[0]);
+    int64_t h_high = h_low + 1;
+    int64_t w_low = floor(coord[1]);
+    int64_t w_high = w_low + 1;
 
     // ratio
     T ratio_h = coord[0] - h_low;
@@ -175,14 +174,12 @@ linear_interp_nd(
     /// data_size: size of data to each dimension. 
 
     // depth
-    int32_t d_low = floor(coord[0]);
-    int32_t d_high = d_low + 1;
-
-    int32_t h_low = floor(coord[1]);
-    int32_t h_high = h_low + 1;
-
-    int32_t w_low = floor(coord[2]);
-    int32_t w_high = w_low + 1;
+    int64_t d_low = floor(coord[0]);
+    int64_t d_high = d_low + 1;
+    int64_t h_low = floor(coord[1]);
+    int64_t h_high = h_low + 1;
+    int64_t w_low = floor(coord[2]);
+    int64_t w_high = w_low + 1;
 
     // ratio
     T ratio_d = coord[0] - d_low;
@@ -253,10 +250,10 @@ linear_interp_nd_grad(
         ratios[i] = coord[i] - coords[i];
     }
 
-    constexpr int32_t num_points = (1 << dim);
-    int32_t indice[dim] = { 0, };
+    constexpr int64_t num_points = (1 << dim);
+    int64_t indice[dim] = { 0, };
     // 0 means low, 1 means high coord.
-    int32_t elements[2] = { 0, 1 };
+    int64_t elements[2] = { 0, 1 };
 
     T points[num_points] = { 0, };
     T weights[num_points] = { 0, };
@@ -264,17 +261,17 @@ linear_interp_nd_grad(
     T val = 0;
 
     // compute points with repeated permutation.
-    for (int32_t idx = 0; idx < num_points; idx++)
+    for (int64_t idx = 0; idx < num_points; idx++)
     {
-        int32_t div = 1;
-        int32_t point_div = 1;
-        int32_t data_idx = 0;
-        int32_t point_idx = 0;
+        int64_t div = 1;
+        int64_t point_div = 1;
+        int64_t data_idx = 0;
+        int64_t point_idx = 0;
         T weight = 1;
         bool is_valid_data = true;
         for (int8_t i = dim - 1; i >= 0; i--)
         {
-            int32_t current_coord = coords[elements[indice[i]] * dim + i];
+            int64_t current_coord = coords[elements[indice[i]] * dim + i];
             if (current_coord < 0 || current_coord >= data_size[i])
             {
                 is_valid_data = false;
@@ -310,13 +307,13 @@ linear_interp_nd_grad(
         }
     }
 
-    for (int32_t i = 0; i < dim; i++)
+    for (int64_t i = 0; i < dim; i++)
     {
         T grad = 0;
-        for (int32_t point_idx = 0; point_idx < num_points; point_idx++)
+        for (int64_t point_idx = 0; point_idx < num_points; point_idx++)
         {
-            int32_t current_point_shape[dim];
-            int32_t point_div = 1;
+            int64_t current_point_shape[dim];
+            int64_t point_div = 1;
             for (int8_t j = dim - 1; j >= 0; j--)
             {
                 current_point_shape[j] = point_idx / point_div % 2;
@@ -343,8 +340,8 @@ linear_interp_nd_grad(
     /// coord: 1d floating-point coordinate.
     /// data_size: size of data to each dimension. 
 
-    int32_t low = floor(coord[0]);
-    int32_t high = low + 1;
+    int64_t low = floor(coord[0]);
+    int64_t high = low + 1;
 
     // ratio
     T ratio = coord[0] - low;
@@ -379,11 +376,10 @@ linear_interp_nd_grad(
     /// coord: 2d floating-point coordinate.
     /// data_size: size of data to each dimension. 
 
-    int32_t h_low = floor(coord[0]);
-    int32_t h_high = h_low + 1;
-
-    int32_t w_low = floor(coord[1]);
-    int32_t w_high = w_low + 1;
+    int64_t h_low = floor(coord[0]);
+    int64_t h_high = h_low + 1;
+    int64_t w_low = floor(coord[1]);
+    int64_t w_high = w_low + 1;
 
     // ratio
     T ratio_h = coord[0] - h_low;
@@ -428,15 +424,13 @@ linear_interp_nd_grad(
     /// data_size: size of data to each dimension. 
 
     // depth
-    int32_t d_low = floor(coord[0]);
-    int32_t d_high = d_low + 1;
-
-    int32_t h_low = floor(coord[1]);
-    int32_t h_high = h_low + 1;
-
-    int32_t w_low = floor(coord[2]);
-    int32_t w_high = w_low + 1;
-
+    int64_t d_low = floor(coord[0]);
+    int64_t d_high = d_low + 1;
+    int64_t h_low = floor(coord[1]);
+    int64_t h_high = h_low + 1;
+    int64_t w_low = floor(coord[2]);
+    int64_t w_high = w_low + 1;
+    
     // ratio
     T ratio_d = coord[0] - d_low;
     T ratio_h = coord[1] - h_low;
@@ -504,21 +498,21 @@ linear_interp_nd_weight(
         ratios[i] = coord[i] - coords[i];
     }
 
-    constexpr int32_t num_points = 1 << dim;
-    int32_t indice[dim] = { 0, };
+    constexpr int64_t num_points = 1 << dim;
+    int64_t indice[dim] = { 0, };
     // 0 means low, 1 means high coord.
-    int32_t elements[2] = { 0, 1 };
+    int64_t elements[2] = { 0, 1 };
 
     // compute points with repeated permutation.
-    for (int32_t idx = 0; idx < num_points; idx++)
+    for (int64_t idx = 0; idx < num_points; idx++)
     {
-        int32_t div = 1;
-        int32_t data_idx = 0;
+        int64_t div = 1;
+        int64_t data_idx = 0;
         T weight = 1;
         bool is_valid_data = true;
         for (int8_t i = dim - 1; i >= 0; i--)
         {
-            int32_t current_coord = coords[elements[indice[i]] * dim + i];
+            int64_t current_coord = coords[elements[indice[i]] * dim + i];
             if (current_coord < 0 || current_coord >= data_size[i])
             {
                 is_valid_data = false;
@@ -572,8 +566,8 @@ linear_interp_nd_weight(
     /// data_size: size of data to each dimension. 
     /// data_grad: [ elements ] (1d)
 
-    int32_t low = floor(coord[0]);
-    int32_t high = low + 1;
+    int64_t low = floor(coord[0]);
+    int64_t high = low + 1;
 
     // ratio
     T ratio = coord[0] - low;
@@ -611,11 +605,10 @@ linear_interp_nd_weight(
     /// data_size: size of data to each dimension. 
     /// data_grad: [ hegith, width ] (2d)
 
-    int32_t h_low = floor(coord[0]);
-    int32_t h_high = h_low + 1;
-
-    int32_t w_low = floor(coord[1]);
-    int32_t w_high = w_low + 1;
+    int64_t h_low = floor(coord[0]);
+    int64_t h_high = h_low + 1;
+    int64_t w_low = floor(coord[1]);
+    int64_t w_high = w_low + 1;
 
     // ratio
     T ratio_h = coord[0] - h_low;
@@ -687,14 +680,12 @@ linear_interp_nd_weight(
     /// data_grad: [ depth, hegith, width ] (3d)
 
     // depth
-    int32_t d_low = floor(coord[0]);
-    int32_t d_high = d_low + 1;
-
-    int32_t h_low = floor(coord[1]);
-    int32_t h_high = h_low + 1;
-
-    int32_t w_low = floor(coord[2]);
-    int32_t w_high = w_low + 1;
+    int64_t d_low = floor(coord[0]);
+    int64_t d_high = (d_low + 1);
+    int64_t h_low = floor(coord[1]);
+    int64_t h_high = (h_low + 1);
+    int64_t w_low = floor(coord[2]);
+    int64_t w_high = (w_low + 1);
 
     // ratio
     T ratio_d = coord[0] - d_low;
