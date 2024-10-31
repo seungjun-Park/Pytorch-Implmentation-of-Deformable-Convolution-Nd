@@ -6,14 +6,14 @@ please see original implementation
 [DCNV2](https://github.com/msracver/Deformable-ConvNets)  
 [DCNV4](https://github.com/OpenGVLab/DCNv4)  
 
-## Release note  
+## Support  
 
-- Support fp16. (cuda compute capability >= 7.0 && only gpu available, but when use fp16, it often occurs over/underflow problem. please use bfp16 instead.)  
-- Support bfp16. (cuda compute capability >= 8.0)  
-- Support torch.no_grad().
-- Support torch.autocast().
-- Support torch.autograd().  
-- Support 1d ~ 3d implement. (if you want to use over 3d, you just add dimension which you wanted TORCH_LIBRARY_IMPL in deform_conv.cpp, deform_conv_cpu.cpp and deform_conv_cuda.cu)       
+- fp16. (cuda compute capability >= 7.0 && only gpu available, but when use fp16, it often occurs over/underflow problem. please use bfp16 instead.)  
+- bfp16. (cuda compute capability >= 8.0)  
+- torch.no_grad(). (enable gradient checkpointing)  
+- torch.autocast(). (enable pytorch AMP system)  
+- torch.autograd(). (just called function. do not need any additional implement.) 
+- 1d ~ 3d implement. (if you want to use over 3d, you just add dimension which you wanted TORCH_LIBRARY_IMPL in deform_conv.cpp, deform_conv_cpu.cpp and deform_conv_cuda.cu)       
 
 ## Papers   
 - [Deformable Convolution v1](https://arxiv.org/abs/1703.06211)   
@@ -23,17 +23,17 @@ please see original implementation
 
 ## Requirements   
 - Pytorch
-- CudaToolkit >= 11.0 (Cuda compute capability >= 8.0 to support f16 and bf16)
+- CudaToolkit
 - Python
 - Ninja (Optional for fast build)
    
 ## Test environments   
-- OS: Windows10 with MSVC / Linux(Ubuntu) with gcc  
+- OS: Windows10 with MSVC / Ubuntu 20.04.6 LTS with gcc  
 - C++: std 17  
 - C: std 14  
 - Python: 3.10  
-- Pytorch: 2.1.0  
-- CudaToolkit: 11.8  
+- Pytorch: 2.1.0  / 2.4.0
+- CudaToolkit: 11.8  / 12.4
   
 ## Build
 ```python
