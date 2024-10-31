@@ -2,7 +2,7 @@
 Supporting N-dimensional deformable convolution    
 This implementation is quite different from original implementation.   
    
-please see original implementation  
+Original implementation:    
 [DCNV2](https://github.com/msracver/Deformable-ConvNets)  
 [DCNV4](https://github.com/OpenGVLab/DCNv4)  
 
