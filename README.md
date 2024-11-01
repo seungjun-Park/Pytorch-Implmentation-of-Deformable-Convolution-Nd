@@ -67,7 +67,7 @@ with torch.cuda.amp.autocast(dtype=torch.bfloat16):
         (1, 1),   // padding
         (1, 1),   // dilation
         2,        // groups
-        8,        // offset_field_channels_per_groups
+        8,        // deformable groups
         bias,
     )
 
