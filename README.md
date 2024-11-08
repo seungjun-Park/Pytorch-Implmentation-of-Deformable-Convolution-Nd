@@ -32,7 +32,7 @@ Model example: please see [here](https://github.com/seungjun-Park/Deformable-Edg
    
 ## Test environments   
 - OS: Windows10 with MSVC / Ubuntu 20.04.6 LTS with gcc
-- GPU: NVIDA 3070TI 8G in Windows10 / NVIDIA A5000 in Ubuntu
+- GPU: NVIDA 3070TI 8G in Windows10 / NVIDIA A5000 24G in Ubuntu
 - C++: std 17  
 - C: std 14  
 - Python: 3.10  
