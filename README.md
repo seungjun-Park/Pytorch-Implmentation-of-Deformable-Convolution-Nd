@@ -15,11 +15,8 @@ Model example: please see [here](https://github.com/seungjun-Park/Deformable-Edg
 - torch.no_grad(). (enable gradient checkpointing)  
 - torch.autocast(). (enable pytorch AMP system)  
 - torch.autograd(). (just called function. do not need any additional implement.) 
-- 1d ~ 3d implement. (if you want to use over 3d, you just add dimension which you wanted TORCH_LIBRARY_IMPL in deform_conv.cpp, deform_conv_cpu.cpp and deform_conv_cuda.cu)       
-  
-## To do  
-- support shared memory version.  
-- support channels last version.  
+- 1d ~ 3d implement. (if you want to use over 3d, you just add dimension which you wanted TORCH_LIBRARY_IMPL in deform_conv.cpp, deform_conv_cpu.cpp and deform_conv_cuda.cu)
+- channels last memory format.  
   
 ## Papers   
 - [Deformable Convolution v1](https://arxiv.org/abs/1703.06211)   
