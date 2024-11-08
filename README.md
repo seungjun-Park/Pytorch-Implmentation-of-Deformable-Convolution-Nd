@@ -1,6 +1,5 @@
 # Pytorch-Implmentation-of-Deformable-Convolution-Nd   
-Supporting N-dimensional deformable convolution    
-This implementation is quite different from original implementation.   
+Supporting N-dimensional deformable convolution     
    
 Original implementation:    
 [DCNV2](https://github.com/msracver/Deformable-ConvNets)  
