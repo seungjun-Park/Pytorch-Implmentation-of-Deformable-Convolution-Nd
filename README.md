@@ -46,7 +46,7 @@ python setup.py build install
 ```
 
 ## DOC  
-- [doc](https://github.com/seungjun-Park/Pytorch-Implmentation-of-Deformable-Convolution-Nd/main/doc.md)
+- [doc](https://github.com/seungjun-Park/Pytorch-Implmentation-of-Deformable-Convolution-Nd/blob/main/doc.md)
 
 ## Example  
 ```
