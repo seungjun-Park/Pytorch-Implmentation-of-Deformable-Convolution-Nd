@@ -7,15 +7,50 @@
 #include <type_utils.h>
 #include <type_traits>
 
+template<int8_t dim>
+__host__ __device__
+bool is_valid_coord(
+    const IntArray<dim> coord,
+    const IntArray<dim>& data_size)
+{
+    for (int8_t i = dim - 1; i >= 0; i--)
+    {
+        if (coord[i] < 0 || coord[i] >= data_size[i])
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+template<int8_t dim, bool is_channels_last>
+__host__ __device__
+int64_t get_stride_idx(
+    const IntArray<dim> coord,
+    const IntArray<dim>& data_size,
+    const int64_t channels) {
+
+    int64_t idx = 0;
+    int64_t div = (is_channels_last) ? channels : 1;
+    for (int8_t i = dim - 1; i >= 0; i--)
+    {
+        idx += coord[i] * div;
+        div *= data_size[i];
+    }
+    
+    return idx;
+}
+
 /////////////       Implementation      ////////////////////
 // n-dimensional linear interpolation.
-template<typename T, int8_t dim>
+template<typename T, int8_t dim, bool is_channels_last>
 __host__ __device__
 typename std::enable_if<(dim > IMPLEMENTED_DIM), T>::type
 linear_interp_nd(
     const T* data,
     const Array<T, dim>& coord,
-    const IntArray<dim>& data_size)
+    const IntArray<dim>& data_size,
+    const int64_t channels)
 {
     // if idx < dim means coord_low, else coord_high.
     IntArray<dim * 2> coords;
@@ -38,7 +73,7 @@ linear_interp_nd(
     // compute points with repeated permutation.
     for (int64_t idx = 0; idx < num_points; idx++)
     {
-        int64_t div = 1;
+        int64_t div = (is_channels_last) ? channels : 1;
         int64_t data_idx = 0;
         T weight = 1;
         bool is_valid_data = true;
@@ -81,13 +116,14 @@ linear_interp_nd(
 }
 
 // linear interpolation
-template<typename T, uint8_t dim>
+template<typename T, uint8_t dim, bool is_channels_last>
 __host__ __device__
 typename std::enable_if<(dim == 1), T>::type
 linear_interp_nd(
     const T* data,
     const Array<T, 1>& coord,
-    const IntArray<1>& data_size) {
+    const IntArray<1>& data_size,
+    const int64_t channels) {
 
     /// data: [ element_length ] (1d).
     /// coord: 1d floating-point coordinate.
@@ -101,11 +137,11 @@ linear_interp_nd(
 
     T v1 = 0, v2 = 0;
 
-    if (low >= 0 && low < data_size[0])
-        v1 = data[low];
+    if (is_valid_coord<1>({ low }, data_size))
+        v1 = data[get_stride_idx<1, is_channels_last>({ low }, data_size, channels)];
 
-    if (high >= 0 && high < data_size[0])
-        v2 = data[high];
+    if (is_valid_coord<1>({ high }, data_size))
+        v2 = data[get_stride_idx<1, is_channels_last>({ high }, data_size, channels)];
 
     // weight for each values
     T val = (1.f - ratio) * v1 + ratio * v2;
@@ -114,17 +150,19 @@ linear_interp_nd(
 }
 
 // bilinear interpolation
-template<typename T, int8_t dim>
+template<typename T, int8_t dim, bool is_channels_last>
 __host__ __device__
 typename std::enable_if<(dim == 2), T>::type
 linear_interp_nd(
     const T* data,
     const Array<T, 2>& coord,
-    const IntArray<2>& data_size) {
+    const IntArray<2>& data_size,
+    const int64_t channels) {
 
     /// data: [ height, width ] (2d).
     /// coord: 2d floating-point coordinate.
     /// data_size: size of data to each dimension. 
+    /// channels: total channels of data
 
     int64_t h_low = floor(coord[0]);
     int64_t h_high = h_low + 1;
@@ -137,17 +175,17 @@ linear_interp_nd(
     
     T v11 = 0, v12 = 0, v21 = 0, v22 = 0;
 
-    if (h_low >= 0 && h_low < data_size[0] && w_low >= 0 && w_low < data_size[1])
-        v11 = data[h_low * data_size[1] + w_low];
+    if (is_valid_coord<2>({ h_low, w_low }, data_size))
+        v11 = data[get_stride_idx<2, is_channels_last>({ h_low, w_low }, data_size, channels)];
 
-    if (h_low >= 0 && h_low < data_size[0] && w_high >= 0 && w_high < data_size[1])
-        v12 = data[h_low * data_size[1] + w_high];
+    if (is_valid_coord<2>({ h_low, w_high }, data_size))
+        v12 = data[get_stride_idx<2, is_channels_last>({ h_low, w_high }, data_size, channels)];
 
-    if (h_high >= 0 && h_high < data_size[0] && w_low >= 0 && w_low < data_size[1])
-        v21 = data[h_high * data_size[1] + w_low];
+    if (is_valid_coord<2>({ h_high, w_low }, data_size))
+        v21 = data[get_stride_idx<2, is_channels_last>({ h_high, w_low }, data_size, channels)];
 
-    if (h_high >= 0 && h_high < data_size[0] && w_high >= 0 && w_high < data_size[1])
-        v22 = data[h_high * data_size[1] + w_high];
+    if (is_valid_coord<2>({ h_high, w_high }, data_size))
+        v22 = data[get_stride_idx<2, is_channels_last>({ h_high, w_high }, data_size, channels)];
 
     // weight
     T w11 = (1.f - ratio_h) * (1.f - ratio_w); 
@@ -161,17 +199,19 @@ linear_interp_nd(
 }
 
 // trilinear interp
-template<typename T, int8_t dim>
+template<typename T, int8_t dim, bool is_channels_last>
 __host__ __device__
 typename std::enable_if<(dim == 3), T>::type
 linear_interp_nd(
     const T* data,
     const Array<T, 3>& coord,
-    const IntArray<3>& data_size) {
+    const IntArray<3>& data_size,
+    const int64_t channels) {
 
     /// data: [ depth, height, width ] (3d).
     /// coord: 3d floating-point coordinate.
     /// data_size: size of data to each dimension. 
+    /// channels: total channels of data
 
     // depth
     int64_t d_low = floor(coord[0]);
@@ -189,29 +229,29 @@ linear_interp_nd(
     T v111 = 0, v211 = 0, v121 = 0, v221 = 0, v112 = 0, v212 = 0, v122 = 0, v222 = 0;
 
     // if the coordinate in data range 
-    if (d_low >= 0 && d_low < data_size[0] && h_low >= 0 && h_low < data_size[1] && w_low >= 0 && w_low < data_size[2])
-        v111 = data[d_low * data_size[1] * data_size[2] + h_low * data_size[2] + w_low];
+    if (is_valid_coord<3>({ d_low, h_low, w_low }, data_size))
+        v111 = data[get_stride_idx<3, is_channels_last>({ d_low, h_low, w_low }, data_size, channels)];
 
-    if (d_high >= 0 && d_high < data_size[0] && h_low >= 0 && h_low < data_size[1] && w_low >= 0 && w_low < data_size[2])
-        v211 = data[d_high * data_size[1] * data_size[2] + h_low * data_size[2] + w_low];
+    if (is_valid_coord<3>({ d_high, h_low, w_low }, data_size))
+        v211 = data[get_stride_idx<3, is_channels_last>({ d_high, h_low, w_low }, data_size, channels)];
 
-    if (d_low >= 0 && d_low < data_size[0] && h_high >= 0 && h_high < data_size[1] && w_low >= 0 && w_low < data_size[2])
-        v121 = data[d_low * data_size[1] * data_size[2] + h_high * data_size[2] + w_low];
+    if (is_valid_coord<3>({ d_low, h_high, w_low }, data_size))
+        v121 = data[get_stride_idx<3, is_channels_last>({ d_low, h_high, w_low }, data_size, channels)];
 
-    if (d_high >= 0 && d_high < data_size[0] && h_high >= 0 && h_high < data_size[1] && w_low >= 0 && w_low < data_size[2])
-        v221 = data[d_high * data_size[1] * data_size[2] + h_high * data_size[2] + w_low];
+    if (is_valid_coord<3>({ d_high, h_high, w_low }, data_size))
+        v221 = data[get_stride_idx<3, is_channels_last>({ d_high, h_high, w_low }, data_size, channels)];
 
-    if (d_low >= 0 && d_low < data_size[0] && h_low >= 0 && h_low < data_size[1] && w_high >= 0 && w_high < data_size[2])
-        v112 = data[d_low * data_size[1] * data_size[2] + h_low * data_size[2] + w_high];
+    if (is_valid_coord<3>({ d_low, h_low, w_high }, data_size))
+        v112 = data[get_stride_idx<3, is_channels_last>({ d_low, h_low, w_high }, data_size, channels)];
 
-    if (d_high >= 0 && d_high < data_size[0] && h_low >= 0 && h_low < data_size[1] && w_high >= 0 && w_high < data_size[2])
-        v212 = data[d_high * data_size[1] * data_size[2] + h_low * data_size[2] + w_high];
+    if (is_valid_coord<3>({ d_high, h_low, w_high }, data_size))
+        v212 = data[get_stride_idx<3, is_channels_last>({ d_high, h_low, w_high }, data_size, channels)];
 
-    if (d_low >= 0 && d_low < data_size[0] && h_high >= 0 && h_high < data_size[1] && w_high >= 0 && w_high < data_size[2])
-        v122 = data[d_low * data_size[1] * data_size[2] + h_high * data_size[2] + w_high];
+    if (is_valid_coord<3>({ d_low, h_high, w_high }, data_size))
+        v122 = data[get_stride_idx<3, is_channels_last>({ d_low, h_high, w_high }, data_size, channels)];
 
-    if (d_high >= 0 && d_high < data_size[0] && h_high >= 0 && h_high < data_size[1] && w_high >= 0 && w_high < data_size[2])
-        v222 = data[d_high * data_size[1] * data_size[2] + h_high * data_size[2] + w_high];
+    if (is_valid_coord<3>({ d_high, h_high, w_high }, data_size))
+        v222 = data[get_stride_idx<3, is_channels_last>({ d_high, h_high, w_high }, data_size, channels)];
 
     // weight
     T w111 = (1.f - ratio_d) * (1.f - ratio_h) * (1.f - ratio_w);
@@ -229,13 +269,14 @@ linear_interp_nd(
 }
 
 // n-dimensional linear interpolation grad.
-template<typename T, int8_t dim>
+template<typename T, int8_t dim, bool is_channels_last>
 __host__ __device__
 typename std::enable_if<(dim > IMPLEMENTED_DIM), Array<T, dim>>::type
 linear_interp_nd_grad(
     const T* data,
     const Array<T, dim>& coord,
-    const IntArray<dim>& data_size)
+    const IntArray<dim>& data_size,
+    const int64_t channels)
 {
     Array<T, dim> grads;
 
@@ -263,7 +304,7 @@ linear_interp_nd_grad(
     // compute points with repeated permutation.
     for (int64_t idx = 0; idx < num_points; idx++)
     {
-        int64_t div = 1;
+        int64_t div = (is_channels_last) ? channels : 1;
         int64_t point_div = 1;
         int64_t data_idx = 0;
         int64_t point_idx = 0;
@@ -328,13 +369,14 @@ linear_interp_nd_grad(
 }
 
 // gradient of linear interpolation
-template<typename T, int8_t dim>
+template<typename T, int8_t dim, bool is_channels_last>
 __host__ __device__
 typename std::enable_if<(dim == 1), Array<T, 1>>::type
 linear_interp_nd_grad(
     const T* data,
     const Array<T, 1>& coord,
-    const IntArray<1>& data_size) {
+    const IntArray<1>& data_size,
+    const int64_t channels) {
 
     /// data: [ element_length ] (1d).
     /// coord: 1d floating-point coordinate.
@@ -348,11 +390,11 @@ linear_interp_nd_grad(
 
     T v1 = 0, v2 = 0;
 
-    if (low >= 0 && low < data_size[0])
-        v1 = data[low];
+    if (is_valid_coord<1>({ low }, data_size))
+        v1 = data[get_stride_idx<1, is_channels_last>({ low }, data_size, channels)];
 
-    if (high >= 0 && high < data_size[0])
-        v2 = data[high];
+    if (is_valid_coord<1>({ high }, data_size))
+        v2 = data[get_stride_idx<1, is_channels_last>({ high }, data_size, channels)];
 
     // weight for each values
     T grad = v2 - v1;
@@ -364,13 +406,14 @@ linear_interp_nd_grad(
 }
 
 // grdient of bilinear interpolation
-template<typename T, int8_t dim>
+template<typename T, int8_t dim, bool is_channels_last>
 __host__ __device__
 typename std::enable_if<(dim == 2), Array<T, 2>>::type
 linear_interp_nd_grad(
     const T* data,
     const Array<T, 2>& coord,
-    const IntArray<2>& data_size) {
+    const IntArray<2>& data_size,
+    const int64_t channels) {
 
     /// data: [ height, width ] (2d).
     /// coord: 2d floating-point coordinate.
@@ -387,17 +430,17 @@ linear_interp_nd_grad(
 
     T v11 = 0, v12 = 0, v21 = 0, v22 = 0;
 
-    if (h_low >= 0 && h_low < data_size[0] && w_low >= 0 && w_low < data_size[1])
-        v11 = data[h_low * data_size[1] + w_low];
+    if (is_valid_coord<2>({ h_low, w_low }, data_size))
+        v11 = data[get_stride_idx<2, is_channels_last>({ h_low, w_low }, data_size, channels)];
 
-    if (h_low >= 0 && h_low < data_size[0] && w_high >= 0 && w_high < data_size[1])
-        v12 = data[h_low * data_size[1] + w_high];
+    if (is_valid_coord<2>({ h_low, w_high }, data_size))
+        v12 = data[get_stride_idx<2, is_channels_last>({ h_low, w_high }, data_size, channels)];
 
-    if (h_high >= 0 && h_high < data_size[0] && w_low >= 0 && w_low < data_size[1])
-        v21 = data[h_high * data_size[1] + w_low];
+    if (is_valid_coord<2>({ h_high, w_low }, data_size))
+        v21 = data[get_stride_idx<2, is_channels_last>({ h_high, w_low }, data_size, channels)];
 
-    if (h_high >= 0 && h_high < data_size[0] && w_high >= 0 && w_high < data_size[1])
-        v22 = data[h_high * data_size[1] + w_high];
+    if (is_valid_coord<2>({ h_high, w_high }, data_size))
+        v22 = data[get_stride_idx<2, is_channels_last>({ h_high, w_high }, data_size, channels)];
 
     // gradient of height and width
     T grad_h = (v21 - v11) * (1 - ratio_w) + (v22 - v12) * ratio_w;
@@ -411,13 +454,14 @@ linear_interp_nd_grad(
 }
 
 // trilinear interp
-template<typename T, int8_t dim>
+template<typename T, int8_t dim, bool is_channels_last>
 __host__ __device__
 typename std::enable_if<(dim == 3), Array<T, 3>>::type
 linear_interp_nd_grad(
     const T* data,
     const Array<T, 3>& coord,
-    const IntArray<3>& data_size) {
+    const IntArray<3>& data_size,
+    const int64_t channels) {
 
     /// data: [ depth, height, width ] (3d).
     /// coord: 3d floating-point coordinate.
@@ -439,29 +483,29 @@ linear_interp_nd_grad(
     T v111 = 0, v211 = 0, v121 = 0, v221 = 0, v112 = 0, v212 = 0, v122 = 0, v222 = 0;
 
     // if the coordinate in data range 
-    if (d_low >= 0 && d_low < data_size[0] && h_low >= 0 && h_low < data_size[1] && w_low >= 0 && w_low < data_size[2])
-        v111 = data[d_low * data_size[1] * data_size[2] + h_low * data_size[2] + w_low];
+    if (is_valid_coord<3>({ d_low, h_low, w_low }, data_size))
+        v111 = data[get_stride_idx<3, is_channels_last>({ d_low, h_low, w_low }, data_size, channels)];
 
-    if (d_high >= 0 && d_high < data_size[0] && h_low >= 0 && h_low < data_size[1] && w_low >= 0 && w_low < data_size[2])
-        v211 = data[d_high * data_size[1] * data_size[2] + h_low * data_size[2] + w_low];
+    if (is_valid_coord<3>({ d_high, h_low, w_low }, data_size))
+        v211 = data[get_stride_idx<3, is_channels_last>({ d_high, h_low, w_low }, data_size, channels)];
 
-    if (d_low >= 0 && d_low < data_size[0] && h_high >= 0 && h_high < data_size[1] && w_low >= 0 && w_low < data_size[2])
-        v121 = data[d_low * data_size[1] * data_size[2] + h_high * data_size[2] + w_low];
+    if (is_valid_coord<3>({ d_low, h_high, w_low }, data_size))
+        v121 = data[get_stride_idx<3, is_channels_last>({ d_low, h_high, w_low }, data_size, channels)];
 
-    if (d_high >= 0 && d_high < data_size[0] && h_high >= 0 && h_high < data_size[1] && w_low >= 0 && w_low < data_size[2])
-        v221 = data[d_high * data_size[1] * data_size[2] + h_high * data_size[2] + w_low];
+    if (is_valid_coord<3>({ d_high, h_high, w_low }, data_size))
+        v221 = data[get_stride_idx<3, is_channels_last>({ d_high, h_high, w_low }, data_size, channels)];
 
-    if (d_low >= 0 && d_low < data_size[0] && h_low >= 0 && h_low < data_size[1] && w_high >= 0 && w_high < data_size[2])
-        v112 = data[d_low * data_size[1] * data_size[2] + h_low * data_size[2] + w_high];
+    if (is_valid_coord<3>({ d_low, h_low, w_high }, data_size))
+        v112 = data[get_stride_idx<3, is_channels_last>({ d_low, h_low, w_high }, data_size, channels)];
 
-    if (d_high >= 0 && d_high < data_size[0] && h_low >= 0 && h_low < data_size[1] && w_high >= 0 && w_high < data_size[2])
-        v212 = data[d_high * data_size[1] * data_size[2] + h_low * data_size[2] + w_high];
+    if (is_valid_coord<3>({ d_high, h_low, w_high }, data_size))
+        v212 = data[get_stride_idx<3, is_channels_last>({ d_high, h_low, w_high }, data_size, channels)];
 
-    if (d_low >= 0 && d_low < data_size[0] && h_high >= 0 && h_high < data_size[1] && w_high >= 0 && w_high < data_size[2])
-        v122 = data[d_low * data_size[1] * data_size[2] + h_high * data_size[2] + w_high];
+    if (is_valid_coord<3>({ d_low, h_high, w_high }, data_size))
+        v122 = data[get_stride_idx<3, is_channels_last>({ d_low, h_high, w_high }, data_size, channels)];
 
-    if (d_high >= 0 && d_high < data_size[0] && h_high >= 0 && h_high < data_size[1] && w_high >= 0 && w_high < data_size[2])
-        v222 = data[d_high * data_size[1] * data_size[2] + h_high * data_size[2] + w_high];
+    if (is_valid_coord<3>({ d_high, h_high, w_high }, data_size))
+        v222 = data[get_stride_idx<3, is_channels_last>({ d_high, h_high, w_high }, data_size, channels)];
 
     T grad_d = (1 - ratio_h) * (1 - ratio_w) * (v211 - v111) + ratio_h * (1 - ratio_w) * (v221 - v121) + (1 - ratio_h) * ratio_w * (v212 - v112) + ratio_h * ratio_w * (v222 - v122);
     T grad_h = (1 - ratio_d) * (1 - ratio_w) * (v121 - v111) + ratio_d * (1 - ratio_w) * (v221 - v211) + (1 - ratio_d) * ratio_w * (v122 - v112) + ratio_d * ratio_w * (v222 - v212);
@@ -477,7 +521,7 @@ linear_interp_nd_grad(
 
 
 // n-dimensional linear interpolation weight.
-template<typename T, int8_t dim>
+template<typename T, int8_t dim, bool is_channels_last>
 __host__ __device__
 typename std::enable_if<(dim > IMPLEMENTED_DIM), void>::type
 linear_interp_nd_weight(
@@ -485,6 +529,7 @@ linear_interp_nd_weight(
     const T attn_mask,
     const Array<T, dim>& coord,
     const IntArray<dim>& data_size,
+    const int64_t channels,
     mapped_type<T>* data_grad)
 {
     // if idx < dim means coord_low, else coord_high.
@@ -506,7 +551,7 @@ linear_interp_nd_weight(
     // compute points with repeated permutation.
     for (int64_t idx = 0; idx < num_points; idx++)
     {
-        int64_t div = 1;
+        int64_t div = (is_channels_last) ? channels : 1;
         int64_t data_idx = 0;
         T weight = 1;
         bool is_valid_data = true;
@@ -550,7 +595,7 @@ linear_interp_nd_weight(
     }
 }
 
-template<typename T, int8_t dim>
+template<typename T, int8_t dim, bool is_channels_last>
 __host__ __device__
 typename std::enable_if<(dim == 1), void>::type
 linear_interp_nd_weight(
@@ -558,6 +603,7 @@ linear_interp_nd_weight(
     const T attn_mask,
     const Array<T, 1>& coord,
     const IntArray<1>& data_size,
+    const int64_t channels,
     mapped_type<T>* data_grad)
 {
     /// col: specific value of columns which grad_output @ weight^T.
@@ -575,21 +621,21 @@ linear_interp_nd_weight(
     T w1 = 1.f - ratio;
     T w2 = ratio;
 #ifdef __CUDA_ARCH__
-    if (low >= 0 && low < data_size[0])
-        atomicAdd(&data_grad[low], (mapped_type<T>)(w1 * attn_mask * col));
+    if (is_valid_coord<1>({ low }, data_size))
+        atomicAdd(&data_grad[get_stride_idx<1, is_channels_last>({ low }, data_size, channels)], (mapped_type<T>)(w1 * attn_mask * col));
 
-    if (high >= 0 && high < data_size[0])
-        atomicAdd(&data_grad[high], (mapped_type<T>)(w2 * attn_mask * col));
+    if (is_valid_coord<1>({ high }, data_size))
+        atomicAdd(&data_grad[get_stride_idx<1, is_channels_last>({ high }, data_size, channels)], (mapped_type<T>)(w2 * attn_mask * col));
 #else
-    if (low >= 0 && low < data_size[0])
-        ((T*)data_grad)[low] += w1 * attn_mask * col;
+    if (is_valid_coord<1>({ low }, data_size))
+        ((T*)data_grad)[get_stride_idx<1, is_channels_last>({ low }, data_size, channels)] += w1 * attn_mask * col;
 
-    if (high >= 0 && high < data_size[0])
-        ((T*)data_grad)[high] += w2 * attn_mask * col;
+    if (is_valid_coord<1>({ high }, data_size))
+        ((T*)data_grad)[get_stride_idx<1, is_channels_last>({ high }, data_size, channels)] += w2 * attn_mask * col;
 #endif // __CUDA_ARCH__
 }
 
-template<typename T, int8_t dim>
+template<typename T, int8_t dim, bool is_channels_last>
 __host__ __device__
 typename std::enable_if<(dim == 2), void>::type
 linear_interp_nd_weight(
@@ -597,6 +643,7 @@ linear_interp_nd_weight(
     const T attn_mask,
     const Array<T, 2>& coord,
     const IntArray<2>& data_size,
+    const int64_t channels,
     mapped_type<T>* data_grad)
 {
     /// col: specific value of columns which grad_output @ weight^T.
@@ -621,49 +668,49 @@ linear_interp_nd_weight(
     T w22 = ratio_h * ratio_w;
 
 #ifdef __CUDA_ARCH__
-    if (h_low >= 0 && h_low < data_size[0] && w_low >= 0 && w_low < data_size[1])
+    if (is_valid_coord<2>({ h_low, w_low }, data_size))
     {
-        atomicAdd(&data_grad[h_low * data_size[1] + w_low], (mapped_type<T>)(attn_mask * col * w11));
+        atomicAdd(&data_grad[get_stride_idx<2, is_channels_last>({ h_low, w_low }, data_size, channels)], (mapped_type<T>)(attn_mask * col * w11));
     }
 
-    if (h_high >= 0 && h_high < data_size[0] && w_low >= 0 && w_low < data_size[1])
+    if (is_valid_coord<2>({ h_high, w_low }, data_size))
     {
-        atomicAdd(&data_grad[h_high * data_size[1] + w_low], (mapped_type<T>)(attn_mask * col * w21));
+        atomicAdd(&data_grad[get_stride_idx<2, is_channels_last>({ h_high, w_low }, data_size, channels)], (mapped_type<T>)(attn_mask * col * w21));
     }
 
-    if (h_low >= 0 && h_low < data_size[0] && w_high >= 0 && w_high < data_size[1])
+    if (is_valid_coord<2>({ h_low, w_high }, data_size))
     {
-        atomicAdd(&data_grad[h_low * data_size[1] + w_high], (mapped_type<T>)(attn_mask * col * w12));
+        atomicAdd(&data_grad[get_stride_idx<2, is_channels_last>({ h_low, w_high }, data_size, channels)], (mapped_type<T>)(attn_mask * col * w12));
     }
 
-    if (h_high >= 0 && h_high < data_size[0] && w_high >= 0 && w_high < data_size[1])
+    if (is_valid_coord<2>({ h_high, w_high }, data_size))
     {
-        atomicAdd(&data_grad[h_high * data_size[1] + w_high], (mapped_type<T>)(attn_mask * col * w22));
+        atomicAdd(&data_grad[get_stride_idx<2, is_channels_last>({ h_high, w_high }, data_size, channels)], (mapped_type<T>)(attn_mask * col * w22));
     }
 #else
-    if (h_low >= 0 && h_low < data_size[0] && w_low >= 0 && w_low < data_size[1])
+    if (is_valid_coord<2>({ h_low, w_low }, data_size))
     {
-        ((T*)data_grad)[h_low * data_size[1] + w_low] += attn_mask * col * w11;
+        ((T*)data_grad)[get_stride_idx<2, is_channels_last>({ h_low, w_low }, data_size, channels)] += attn_mask * col * w11;
     }
 
-    if (h_high >= 0 && h_high < data_size[0] && w_low >= 0 && w_low < data_size[1])
+    if (is_valid_coord<2>({ h_high, w_low }, data_size))
     {
-        ((T*)data_grad)[h_high * data_size[1] + w_low] += attn_mask * col * w21;
+        ((T*)data_grad)[get_stride_idx<2, is_channels_last>({ h_high, w_low }, data_size, channels)] += attn_mask * col * w21;
     }
 
-    if (h_low >= 0 && h_low < data_size[0] && w_high >= 0 && w_high < data_size[1])
+    if (is_valid_coord<2>({ h_low, w_high }, data_size))
     {
-        ((T*)data_grad)[h_low * data_size[1] + w_high] += attn_mask * col * w12;
+        ((T*)data_grad)[get_stride_idx<2, is_channels_last>({ h_low, w_high }, data_size, channels)] += attn_mask * col * w12;
     }
 
-    if (h_high >= 0 && h_high < data_size[0] && w_high >= 0 && w_high < data_size[1])
+    if (is_valid_coord<2>({ h_high, w_high }, data_size))
     {
-        ((T*)data_grad)[h_high * data_size[1] + w_high] += attn_mask * col * w22;
+        ((T*)data_grad)[get_stride_idx<2, is_channels_last>({ h_high, w_high }, data_size, channels)] += attn_mask * col * w22;
     }
 #endif // __CUDA_ARCH__
 }
 
-template<typename T, int8_t dim>
+template<typename T, int8_t dim, bool is_channels_last>
 __host__ __device__
 typename std::enable_if<(dim == 3), void>::type
 linear_interp_nd_weight(
@@ -671,6 +718,7 @@ linear_interp_nd_weight(
     const T attn_mask,
     const Array<T, 3>& coord,
     const IntArray<3>& data_size,
+    const int64_t channels,
     mapped_type<T>* data_grad)
 {
     /// col: specific value of columns which grad_output @ weight^T.
@@ -703,52 +751,52 @@ linear_interp_nd_weight(
     T w222 = ratio_d * ratio_h * ratio_w;
 
 #ifdef __CUDA_ARCH__
-    if (d_low >= 0 && d_low < data_size[0] && h_low >= 0 && h_low < data_size[1] && w_low >= 0 && w_low < data_size[2])
-        atomicAdd(&data_grad[d_low * data_size[1] * data_size[2] + h_low * data_size[2] + w_low], (mapped_type<T>)(w111 * attn_mask * col));
+    if (is_valid_coord<3>({ d_low, h_low, w_low }, data_size))
+        atomicAdd(&data_grad[get_stride_idx<3, is_channels_last>({ d_low, h_low, w_low }, data_size, channels)], (mapped_type<T>)(w111 * attn_mask * col));
 
-    if (d_high >= 0 && d_high < data_size[0] && h_low >= 0 && h_low < data_size[1] && w_low >= 0 && w_low < data_size[2])
-        atomicAdd(&data_grad[d_high * data_size[1] * data_size[2] + h_low * data_size[2] + w_low], (mapped_type<T>)(w211 * attn_mask * col));
+    if (is_valid_coord<3>({ d_high, h_low, w_low }, data_size))
+        atomicAdd(&data_grad[get_stride_idx<3, is_channels_last>({ d_high, h_low, w_low }, data_size, channels)], (mapped_type<T>)(w211 * attn_mask * col));
 
-    if (d_low >= 0 && d_low < data_size[0] && h_high >= 0 && h_high < data_size[1] && w_low >= 0 && w_low < data_size[2])
-        atomicAdd(&data_grad[d_low * data_size[1] * data_size[2] + h_high * data_size[2] + w_low], (mapped_type<T>)(w121 * attn_mask * col));
+    if (is_valid_coord<3>({ d_low, h_high, w_low }, data_size))
+        atomicAdd(&data_grad[get_stride_idx<3, is_channels_last>({ d_low, h_high, w_low }, data_size, channels)], (mapped_type<T>)(w121 * attn_mask * col));
 
-    if (d_high >= 0 && d_high < data_size[0] && h_high >= 0 && h_high < data_size[1] && w_low >= 0 && w_low < data_size[2])
-        atomicAdd(&data_grad[d_high * data_size[1] * data_size[2] + h_high * data_size[2] + w_low], (mapped_type<T>)(w221 * attn_mask * col));
+    if (is_valid_coord<3>({ d_high, h_high, w_low }, data_size))
+        atomicAdd(&data_grad[get_stride_idx<3, is_channels_last>({ d_high, h_high, w_low }, data_size, channels)], (mapped_type<T>)(w221 * attn_mask * col));
 
-    if (d_low >= 0 && d_low < data_size[0] && h_low >= 0 && h_low < data_size[1] && w_high >= 0 && w_high < data_size[2])
-        atomicAdd(&data_grad[d_low * data_size[1] * data_size[2] + h_low * data_size[2] + w_high], (mapped_type<T>)(w112 * attn_mask * col));
+    if (is_valid_coord<3>({ d_low, h_low, w_high }, data_size))
+        atomicAdd(&data_grad[get_stride_idx<3, is_channels_last>({ d_low, h_low, w_high }, data_size, channels)], (mapped_type<T>)(w112 * attn_mask * col));
 
-    if (d_high >= 0 && d_high < data_size[0] && h_low >= 0 && h_low < data_size[1] && w_high >= 0 && w_high < data_size[2])
-        atomicAdd(&data_grad[d_high * data_size[1] * data_size[2] + h_low * data_size[2] + w_high], (mapped_type<T>)(w212 * attn_mask * col));
+    if (is_valid_coord<3>({ d_high, h_low, w_high }, data_size))
+        atomicAdd(&data_grad[get_stride_idx<3, is_channels_last>({ d_high, h_low, w_high }, data_size, channels)], (mapped_type<T>)(w212 * attn_mask * col));
 
-    if (d_low >= 0 && d_low < data_size[0] && h_high >= 0 && h_high < data_size[1] && w_high >= 0 && w_high < data_size[2])
-        atomicAdd(&data_grad[d_low * data_size[1] * data_size[2] + h_high * data_size[2] + w_high], (mapped_type<T>)(w122 * attn_mask * col));
+    if (is_valid_coord<3>({ d_low, h_high, w_high }, data_size))
+        atomicAdd(&data_grad[get_stride_idx<3, is_channels_last>({ d_low, h_high, w_high }, data_size, channels)], (mapped_type<T>)(w122 * attn_mask * col));
 
-    if (d_high >= 0 && d_high < data_size[0] && h_high >= 0 && h_high < data_size[1] && w_high >= 0 && w_high < data_size[2])
-        atomicAdd(&data_grad[d_high * data_size[1] * data_size[2] + h_high * data_size[2] + w_high], (mapped_type<T>)(w222 * attn_mask * col));
+    if (is_valid_coord<3>({ d_high, h_high, w_high }, data_size))
+        atomicAdd(&data_grad[get_stride_idx<3, is_channels_last>({ d_high, h_high, w_high }, data_size, channels)], (mapped_type<T>)(w222 * attn_mask * col));
 #else
-    if (d_low >= 0 && d_low < data_size[0] && h_low >= 0 && h_low < data_size[1] && w_low >= 0 && w_low < data_size[2])
-        ((T*)data_grad)[d_low * data_size[1] * data_size[2] + h_low * data_size[2] + w_low] += w111 * attn_mask * col;
+    if (is_valid_coord<3>({ d_low, h_low, w_low }, data_size))
+        ((T*)data_grad)[get_stride_idx<3, is_channels_last>({ d_low, h_low, w_low }, data_size, channels)] += w111 * attn_mask * col;
 
-    if (d_high >= 0 && d_high < data_size[0] && h_low >= 0 && h_low < data_size[1] && w_low >= 0 && w_low < data_size[2])
-        ((T*)data_grad)[d_high * data_size[1] * data_size[2] + h_low * data_size[2] + w_low] += w211 * attn_mask * col;
+    if (is_valid_coord<3>({ d_high, h_low, w_low }, data_size))
+        ((T*)data_grad)[get_stride_idx<3, is_channels_last>({ d_high, h_low, w_low }, data_size, channels)] += w211 * attn_mask * col;
 
-    if (d_low >= 0 && d_low < data_size[0] && h_high >= 0 && h_high < data_size[1] && w_low >= 0 && w_low < data_size[2])
-        ((T*)data_grad)[d_low * data_size[1] * data_size[2] + h_high * data_size[2] + w_low] += w121 * attn_mask * col;
+    if (is_valid_coord<3>({ d_low, h_high, w_low }, data_size))
+        ((T*)data_grad)[get_stride_idx<3, is_channels_last>({ d_low, h_high, w_low }, data_size, channels)] += w121 * attn_mask * col;
 
-    if (d_high >= 0 && d_high < data_size[0] && h_high >= 0 && h_high < data_size[1] && w_low >= 0 && w_low < data_size[2])
-        ((T*)data_grad)[d_high * data_size[1] * data_size[2] + h_high * data_size[2] + w_low] += w221 * attn_mask * col;
+    if (is_valid_coord<3>({ d_high, h_high, w_low }, data_size))
+        ((T*)data_grad)[get_stride_idx<3, is_channels_last>({ d_high, h_high, w_low }, data_size, channels)] += w221 * attn_mask * col;
 
-    if (d_low >= 0 && d_low < data_size[0] && h_low >= 0 && h_low < data_size[1] && w_high >= 0 && w_high < data_size[2])
-        ((T*)data_grad)[d_low * data_size[1] * data_size[2] + h_low * data_size[2] + w_high] += w112 * attn_mask * col;
+    if (is_valid_coord<3>({ d_low, h_low, w_high }, data_size))
+        ((T*)data_grad)[get_stride_idx<3, is_channels_last>({ d_low, h_low, w_high }, data_size, channels)] += w112 * attn_mask * col;
 
-    if (d_high >= 0 && d_high < data_size[0] && h_low >= 0 && h_low < data_size[1] && w_high >= 0 && w_high < data_size[2])
-        ((T*)data_grad)[d_high * data_size[1] * data_size[2] + h_low * data_size[2] + w_high] += w212 * attn_mask * col;
+    if (is_valid_coord<3>({ d_high, h_low, w_high }, data_size))
+        ((T*)data_grad)[get_stride_idx<3, is_channels_last>({ d_high, h_low, w_high }, data_size, channels)] += w212 * attn_mask * col;
 
-    if (d_low >= 0 && d_low < data_size[0] && h_high >= 0 && h_high < data_size[1] && w_high >= 0 && w_high < data_size[2])
-        ((T*)data_grad)[d_low * data_size[1] * data_size[2] + h_high * data_size[2] + w_high] += w122 * attn_mask * col;
+    if (is_valid_coord<3>({ d_low, h_high, w_high }, data_size))
+        ((T*)data_grad)[get_stride_idx<3, is_channels_last>({ d_low, h_high, w_high }, data_size, channels)] += w122 * attn_mask * col;
 
-    if (d_high >= 0 && d_high < data_size[0] && h_high >= 0 && h_high < data_size[1] && w_high >= 0 && w_high < data_size[2])
-        ((T*)data_grad)[d_high * data_size[1] * data_size[2] + h_high * data_size[2] + w_high] += w222 * attn_mask * col;
+    if (is_valid_coord<3>({ d_high, h_high, w_high }, data_size))
+        ((T*)data_grad)[get_stride_idx<3, is_channels_last>({ d_high, h_high, w_high }, data_size, channels)] += w222 * attn_mask * col;
 #endif // __CUDA_ARCH__
 }

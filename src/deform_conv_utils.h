@@ -4,6 +4,57 @@
 #include <ATen/div_rtn.h>
 #include <ATen/native/utils/ParamUtils.h>
 
+template<int8_t dim>
+bool check_is_channels_last(const at::Tensor& target)
+{
+	int64_t tensor_dim = target.dim();
+	bool is_batched = tensor_dim == dim + 2;
+
+	auto sizes = target.sizes().vec();
+	auto strides = target.strides().vec();
+
+	int64_t start_idx = 1;
+
+	if (!is_batched)
+	{
+		start_idx = 0;
+	}
+
+	std::rotate(sizes.begin() + start_idx, sizes.begin() + start_idx + 1, sizes.end());
+	std::rotate(strides.begin() + start_idx, strides.begin() + start_idx + 1, strides.end());
+
+	int64_t stride = 1;
+	for (int64_t i = tensor_dim - 1; i >= 0; i--)
+	{
+		if (stride != strides[i])
+		{
+			return false;
+		}
+		stride *= sizes[i];
+	}
+
+	return true;
+}
+
+template<int8_t dim>
+void make_batched_tensor(
+	at::Tensor& target,
+	bool is_channels_last = false)
+{
+	TORCH_CHECK(target.dim() == 1 + dim);
+
+	if (is_channels_last)
+	{
+		auto target_size = target.sizes().vec();
+		target_size.insert(target_size.begin(), 1);
+		target = target.reshape({ target_size[1], -1 }).transpose(0, 1).unsqueeze(0).transpose(1, 2).reshape({ target_size });
+	}
+	else
+	{
+		target = target.unsqueeze(0);
+	}
+}
+
 void check_deform_conv_backend(
 	const at::Tensor& input,
 	const at::Tensor& weight,
@@ -61,23 +112,6 @@ std::vector<int64_t> get_output_size(
 	at::IntArrayRef kernel_size,
 	at::IntArrayRef stride_size,
 	at::IntArrayRef pad_size,
-	at::IntArrayRef dilation_size);
-
-template <int64_t dim>
-std::vector<int64_t> get_output_size(
-	const at::Tensor& input,
-	const at::Tensor& weight,
-	at::IntArrayRef kernel_size,
-	at::IntArrayRef stride_size,
-	at::IntArrayRef pad_size,
-	at::IntArrayRef dilation_size);
-
-template <int64_t dim>
-std::vector<int64_t> get_output_size(
-	const at::Tensor& input,
-	at::IntArrayRef kernel_size,
-	at::IntArrayRef stride_size,
-	at::IntArrayRef pad_size,
 	at::IntArrayRef dilation_size) {
 	std::vector<int64_t> sizes;
 	for (const auto index : c10::irange(dim)) {
@@ -99,9 +133,10 @@ std::vector<int64_t> get_output_size(
 	at::IntArrayRef stride_size,
 	at::IntArrayRef pad_size,
 	at::IntArrayRef dilation_size) {
-	auto output_size = get_output_size<dim>(
+	std::vector<int64_t> output_size = get_output_size<dim>(
 		input, kernel_size, stride_size, pad_size, dilation_size);
 	output_size.insert(output_size.begin(), weight.size(0));
+
 	if (input.dim() == dim + 2) {
 		output_size.insert(output_size.begin(), input.size(0));
 	}

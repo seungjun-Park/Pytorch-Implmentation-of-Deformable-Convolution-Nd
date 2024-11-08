@@ -11,6 +11,7 @@ void check_deform_conv_backend(
 {
 
 	at::checkBackend("check_deform_conv_backend", { input, weight, offset_field, attn_mask }, location);
+
 	if (bias.defined())
 	{
 		at::checkBackend("check_deform_conv_backend", { bias }, location);

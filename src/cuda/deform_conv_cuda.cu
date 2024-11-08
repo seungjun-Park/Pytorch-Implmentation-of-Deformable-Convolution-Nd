@@ -21,7 +21,7 @@ at::Tensor deform_conv_nd_forward_cuda(
 	at::IntArrayRef padding,
 	at::IntArrayRef dilation,
 	const int64_t groups,
-	const int64_t deformable_groups,
+	const int64_t deformable_groups_per_groups,
 	const at::Tensor& bias) {
 
 	auto k = weight.dim();
@@ -41,17 +41,29 @@ at::Tensor deform_conv_nd_forward_cuda(
 		at::Backend::CUDA
 	);
 
-	at::Tensor output = at::zeros(get_output_size<dim>(input, weight, kernel_size, stride, padding, dilation), input.options().memory_format(at::MemoryFormat::Contiguous));
+	bool is_channels_last = check_is_channels_last<dim>(input);
 
 	// slice tensor sizes (b, c, *) to (*) 
 	auto input_size = input.sizes();
-	auto output_size = output.sizes();
 
 	int32_t batch_size = input.size(0);
 	int32_t in_channels = input.size(1);
 	int32_t out_channels = weight.size(0);
 	int32_t grouped_in_channels = in_channels / groups;
 	int32_t grouped_out_channels = out_channels / groups;
+
+	at::Tensor output = at::zeros(
+		get_output_size<dim>(input, weight, kernel_size, stride, padding, dilation),
+		input.options()
+	).contiguous();
+
+	if (is_channels_last)
+	{
+		auto output_size = output.sizes();
+		output = output.reshape({ batch_size, out_channels, -1 }).transpose(1, 2).contiguous().transpose(1, 2).reshape(output_size);
+	}
+
+	auto output_size = output.sizes();
 
 	int32_t kernel_sizes = c10::multiply_integers(kernel_size);
 	int32_t output_sizes = c10::multiply_integers(output_size.slice(2));
@@ -65,13 +77,26 @@ at::Tensor deform_conv_nd_forward_cuda(
 	GPUInfo gpu_info;
 	auto device_properties = gpu_info.GetDeviceProps()[device.index()];
 
-	int64_t columns_numel = groups * kernel_sizes * grouped_in_channels * batch_size * output_sizes;
-	int64_t per_elements_in_batch = groups * kernel_sizes * grouped_in_channels * output_sizes;
+	int64_t columns_numel = groups * batch_size * output_sizes * grouped_in_channels * kernel_sizes;
+	int64_t per_elements_in_batch = groups * output_sizes * grouped_in_channels * kernel_sizes;
 
 	int32_t min_grid_size, block_size;
 	AT_DISPATCH_FLOATING_TYPES_AND2(at::kHalf, at::kBFloat16, input.scalar_type(), "get_blocks", [&]() {
 		using scalar_t = scalar_t;
-		cudaOccupancyMaxPotentialBlockSize(&min_grid_size, &block_size, im2col_nd_cuda<scalar_t, dim>, 0, device_properties.maxThreadsPerBlock);
+
+		auto im2col_nd_cuda_func = im2col_nd_cuda<scalar_t, dim, false>;
+
+		if (is_channels_last)
+		{
+			im2col_nd_cuda_func = im2col_nd_cuda<scalar_t, dim, true>;
+		}
+
+		cudaOccupancyMaxPotentialBlockSize(
+			&min_grid_size,
+			&block_size,
+			im2col_nd_cuda_func,
+			0,
+			device_properties.maxThreadsPerBlock);
 	});
 
 	int32_t num_blocks = (columns_numel + block_size - 1) / block_size;
@@ -79,7 +104,14 @@ at::Tensor deform_conv_nd_forward_cuda(
 	int32_t sub_batch_size = (num_blocks * block_size) / per_elements_in_batch;
 	int32_t total_iteration = batch_size / sub_batch_size;
 
-	at::Tensor columns = at::zeros({ groups, kernel_sizes * grouped_in_channels, sub_batch_size * output_sizes }, input.options().memory_format(at::MemoryFormat::Contiguous));
+	at::Tensor columns = at::zeros({ groups * grouped_in_channels * kernel_sizes, sub_batch_size * output_sizes }, input.options()).contiguous();
+
+	if (is_channels_last)
+	{
+		columns = columns.transpose(0, 1).contiguous().transpose(0, 1);
+	}
+
+	columns = columns.reshape({ groups, -1, sub_batch_size * output_sizes });
 
 	std::vector<int64_t> output_n_size(2 + dim);
 	output_n_size[0] = out_channels;
@@ -93,15 +125,23 @@ at::Tensor deform_conv_nd_forward_cuda(
 
 	AT_DISPATCH_FLOATING_TYPES_AND2(at::kHalf, at::kBFloat16, input.scalar_type(), "deform_conv_nd_forward<>", [&]() {
 		using scalar_t = scalar_t;
+		auto im2col_nd_cuda_func = im2col_nd_cuda<scalar_t, dim, false>;
+
+		if (is_channels_last)
+		{
+			im2col_nd_cuda_func = im2col_nd_cuda<scalar_t, dim, true>;
+		}
 
 		for (const auto n : c10::irange(total_iteration))
 		{
+			columns.zero_();
+
 			int64_t batch_start = sub_batch_size * n;
 			at::Tensor input_n = input.slice(0, batch_start, batch_start + sub_batch_size);
 			at::Tensor offset_field_n = offset_field.slice(0, batch_start, batch_start + sub_batch_size);
 			at::Tensor attn_mask_n = attn_mask.slice(0, batch_start, batch_start + sub_batch_size);
 
-			im2col_nd_cuda<scalar_t, dim><<<num_blocks, block_size, 0, cudaStream>>>(
+			im2col_nd_cuda_func<<<num_blocks, block_size, 0, cudaStream >>>(
 				input_n.const_data_ptr<scalar_t>(),
 				offset_field_n.const_data_ptr<scalar_t>(),
 				attn_mask_n.const_data_ptr<scalar_t>(),
@@ -114,14 +154,14 @@ at::Tensor deform_conv_nd_forward_cuda(
 				IntArrayRef2IntArray<dim>(padding),
 				IntArrayRef2IntArray<dim>(dilation),
 				groups,
-				deformable_groups,
+				deformable_groups_per_groups,
 				columns.mutable_data_ptr<scalar_t>()
 			);
 
-			output.slice(0, batch_start, batch_start + sub_batch_size) = torch::bmm(
+			output.slice(0, batch_start, batch_start + sub_batch_size).copy_(torch::bmm(
 				weight.reshape({ groups, grouped_out_channels, -1 }),
 				columns
-			).reshape(output_n_size).transpose(0, 1);
+			).reshape(output_n_size).transpose(0, 1));
 		}
 		
 		if (bias.defined())
@@ -145,7 +185,7 @@ torch::autograd::tensor_list deform_conv_nd_backward_cuda(
 	at::IntArrayRef padding,
 	at::IntArrayRef dilation,
 	const int64_t groups,
-	const int64_t deformable_groups,
+	const int64_t deformable_groups_per_groups,
 	const at::Tensor& bias) {
 
 	auto k = weight.dim();
@@ -163,7 +203,7 @@ torch::autograd::tensor_list deform_conv_nd_backward_cuda(
 		at::Backend::CUDA
 	);
 
-	at::Tensor output = at::zeros(get_output_size<dim>(input, weight, kernel_size, stride, padding, dilation), input.options().memory_format(at::MemoryFormat::Contiguous));
+	bool is_channels_last = check_is_channels_last<dim>(input);
 
 	at::Tensor grad_input = at::zeros_like(input);
 	at::Tensor grad_weight = at::zeros_like(weight);
@@ -173,13 +213,25 @@ torch::autograd::tensor_list deform_conv_nd_backward_cuda(
 
 	// slice tensor sizes (b, c, *) to (*) 
 	auto input_size = input.sizes();
-	auto output_size = output.sizes();
 
 	int64_t batch_size = input.size(0);
 	int64_t in_channels = input.size(1);
 	int64_t out_channels = weight.size(0);
 	int64_t grouped_in_channels = in_channels / groups;
 	int64_t grouped_out_channels = out_channels / groups;
+
+	at::Tensor output = at::zeros(
+		get_output_size<dim>(input, weight, kernel_size, stride, padding, dilation),
+		input.options()
+	).contiguous();
+
+	if (is_channels_last)
+	{
+		auto output_size = output.sizes();
+		output = output.reshape({ batch_size, out_channels, -1 }).transpose(1, 2).contiguous().transpose(1, 2).reshape(output_size);
+	}
+
+	auto output_size = output.sizes();
 
 	int64_t kernel_sizes = c10::multiply_integers(kernel_size);
 	int64_t output_sizes = c10::multiply_integers(output_size.slice(2));
@@ -191,16 +243,36 @@ torch::autograd::tensor_list deform_conv_nd_backward_cuda(
 	GPUInfo gpu_info;
 	auto device_properties = gpu_info.GetDeviceProps()[device.index()];
 
-	int64_t columns_numel = groups * kernel_sizes * grouped_in_channels * batch_size * output_sizes;
-	int64_t per_elements_in_batch = groups * kernel_sizes * grouped_in_channels * output_sizes;
+	int64_t columns_numel = groups * batch_size * output_sizes * grouped_in_channels * kernel_sizes;
+	int64_t per_elements_in_batch = groups * output_sizes * grouped_in_channels * kernel_sizes;
 
 	int32_t min_grid_size, block_size;
 	AT_DISPATCH_FLOATING_TYPES_AND2(at::kHalf, at::kBFloat16, input.scalar_type(), "get_blocks", [&]() {
 		using scalar_t = scalar_t;
 		int32_t min_grid_size_im2col, block_size_im2col;
 		int32_t min_grid_size_col2im, block_size_col2im;
-		cudaOccupancyMaxPotentialBlockSize(&min_grid_size_im2col, &block_size_im2col, im2col_nd_cuda<scalar_t, dim>, 0, device_properties.maxThreadsPerBlock);
-		cudaOccupancyMaxPotentialBlockSize(&min_grid_size_col2im, &block_size_col2im, col2im_nd_cuda<scalar_t, dim>, 0, device_properties.maxThreadsPerBlock);
+		auto im2col_nd_cuda_func = im2col_nd_cuda<scalar_t, dim, false>;
+		auto col2im_nd_cuda_func = col2im_nd_cuda<scalar_t, dim, false>;
+		if (is_channels_last)
+		{
+			im2col_nd_cuda_func = im2col_nd_cuda<scalar_t, dim, true>;
+			col2im_nd_cuda_func = col2im_nd_cuda<scalar_t, dim, true>;
+		}
+		
+		cudaOccupancyMaxPotentialBlockSize(
+			&min_grid_size_im2col, 
+			&block_size_im2col, 
+			im2col_nd_cuda_func, 
+			0,
+			device_properties.maxThreadsPerBlock);
+
+		cudaOccupancyMaxPotentialBlockSize(
+			&min_grid_size_col2im, 
+			&block_size_col2im, 
+			col2im_nd_cuda_func, 
+			0,
+			device_properties.maxThreadsPerBlock);
+
 		if (block_size_col2im < block_size_im2col)
 		{
 			min_grid_size = min_grid_size_col2im;
@@ -212,15 +284,33 @@ torch::autograd::tensor_list deform_conv_nd_backward_cuda(
 			block_size = block_size_im2col;
 		}
 		});
+
 	int32_t num_blocks = (columns_numel + block_size - 1) / block_size;
 
 	int64_t sub_batch_size = (num_blocks * block_size) / per_elements_in_batch;
 	int64_t total_iteration = batch_size / sub_batch_size;
 
+	at::Tensor columns = at::zeros({ groups * grouped_in_channels * kernel_sizes, sub_batch_size * output_sizes }, input.options()).contiguous();
+
+	if (is_channels_last)
+	{
+		columns = columns.transpose(0, 1).contiguous().transpose(0, 1);
+	}
+
+	columns = columns.reshape({ groups, -1, sub_batch_size * output_sizes });
+
 	auto cudaStream = c10::cuda::getCurrentCUDAStream(device.index());
 
 	AT_DISPATCH_FLOATING_TYPES_AND2(at::kHalf, at::kBFloat16, input.scalar_type(), "deform_conv_nd_backward<>", [&]() {
 		using scalar_t = scalar_t;
+
+		auto im2col_nd_cuda_func = im2col_nd_cuda<scalar_t, dim, false>;
+		auto col2im_nd_cuda_func = col2im_nd_cuda<scalar_t, dim, false>;
+		if (is_channels_last)
+		{
+			im2col_nd_cuda_func = im2col_nd_cuda<scalar_t, dim, true>;
+			col2im_nd_cuda_func = col2im_nd_cuda<scalar_t, dim, true>;
+		}
 
 		for (const auto n : c10::irange(total_iteration))
 		{
@@ -234,14 +324,16 @@ torch::autograd::tensor_list deform_conv_nd_backward_cuda(
 			at::Tensor grad_offset_field_n = grad_offset_field.slice(0, batch_start, batch_start + sub_batch_size);
 			at::Tensor grad_attn_mask_n = grad_attn_mask.slice(0, batch_start, batch_start + sub_batch_size);
 			at::Tensor grad_output_n = grad_output.slice(0, batch_start, batch_start + sub_batch_size);
+			
+			columns.zero_();
 
-			at::Tensor columns = torch::bmm(
-				weight.reshape({ groups, grouped_out_channels, -1 }).transpose(1, 2), 
+			columns.copy_(torch::bmm(
+				weight.reshape({ groups, grouped_out_channels, -1 }).transpose(1, 2),
 				grad_output_n.transpose(0, 1).reshape({ groups, grouped_out_channels, -1 })
-			);
+			));
 
 			// compute gradient of inputs, offset_field, attn_mask
-			col2im_nd_cuda<scalar_t, dim> << <num_blocks, block_size, 0, cudaStream>>> (
+			col2im_nd_cuda_func<<<num_blocks, block_size, 0, cudaStream >>> (
 				input_n.const_data_ptr<scalar_t>(),
 				columns.const_data_ptr<scalar_t>(),
 				offset_field_n.const_data_ptr<scalar_t>(),
@@ -255,14 +347,16 @@ torch::autograd::tensor_list deform_conv_nd_backward_cuda(
 				IntArrayRef2IntArray<dim>(padding),
 				IntArrayRef2IntArray<dim>(dilation),
 				groups,
-				deformable_groups,
+				deformable_groups_per_groups,
 				(mapped_type<scalar_t>*)grad_input_n.mutable_data_ptr<scalar_t>(),
 				(mapped_type<scalar_t>*)grad_offset_field_n.mutable_data_ptr<scalar_t>(),
 				(mapped_type<scalar_t>*)grad_attn_mask_n.mutable_data_ptr<scalar_t>()
 				);
 
+			columns.zero_();
+
 			// compute grad_weight = grad_output * col^T
-			im2col_nd_cuda<scalar_t, dim><<<num_blocks, block_size, 0, cudaStream>>>(
+			im2col_nd_cuda_func<<<num_blocks, block_size, 0, cudaStream >>>(
 				input_n.const_data_ptr<scalar_t>(),
 				offset_field_n.const_data_ptr<scalar_t>(),
 				attn_mask_n.const_data_ptr<scalar_t>(),
@@ -275,7 +369,7 @@ torch::autograd::tensor_list deform_conv_nd_backward_cuda(
 				IntArrayRef2IntArray<dim>(padding),
 				IntArrayRef2IntArray<dim>(dilation),
 				groups,
-				deformable_groups,
+				deformable_groups_per_groups,
 				columns.mutable_data_ptr<scalar_t>()
 			);
 

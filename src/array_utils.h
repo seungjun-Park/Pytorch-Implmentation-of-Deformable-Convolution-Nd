@@ -16,6 +16,17 @@
 template<typename T, uint8_t size>
 struct Array
 {
+	__host__ __device__ Array() {}
+
+	__host__ __device__ Array(const std::initializer_list<T>& list)
+	{
+		auto list_iter = list.begin();
+		for (uint8_t i = 0; i < size; i++)
+		{
+			elements[i] = *list_iter++;
+		}
+	}
+
 	__host__ __device__ T operator[](uint8_t index) const
 	{
 		assert(index < size);
