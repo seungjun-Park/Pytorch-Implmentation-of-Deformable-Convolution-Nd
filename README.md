@@ -31,7 +31,8 @@ Model example: please see [here](https://github.com/seungjun-Park/Deformable-Edg
 - Ninja (Optional for fast build)
    
 ## Test environments   
-- OS: Windows10 with MSVC / Ubuntu 20.04.6 LTS with gcc  
+- OS: Windows10 with MSVC / Ubuntu 20.04.6 LTS with gcc
+- GPU: NVIDA 3070TI 8G in Windows10 / NVIDIA A5000 in Ubuntu
 - C++: std 17  
 - C: std 14  
 - Python: 3.10  
@@ -55,11 +56,19 @@ import custom_op
 device = 'cuda'
 
 inp = torch.randn(2, 32, 64, 64).to(device)
+
+# learnable parameter for deformable convolution.
 weight = torch.randn(64, 32 // 2, 3, 3).to(device)
 bias = torch.randn(64).to(device)
-offset_field = torch.randn(2, 2, 16 * 9, 64, 64).to(device)
+
+# may be created by nn.Conv, in this case 2d.
+# the shape is [batch, groups * deformable_groups_per_group * kernel_h * kernel_w * (current deformable convolution dim), out_h, out_w], in this case.
+offset_field = torch.randn(2, 16 * 9, 64, 64).to(device)
+
+# the shape is [batch, groups * deformable_groups_per_group * kernel_h * kernel_w, out_h, out_w], in this case.
 attn_mask = torch.randn(2, 1, 16 * 9, 64, 64).to(device)
 
+# usecase. if you want to know what is each parameters meaning, please see doc.md
 with torch.cuda.amp.autocast(dtype=torch.bfloat16):
     output = torch.ops.custom_op.deform_conv2d(
         inp,
@@ -71,7 +80,7 @@ with torch.cuda.amp.autocast(dtype=torch.bfloat16):
         (1, 1),   // padding
         (1, 1),   // dilation
         2,        // groups
-        8,        // deformable groups
+        2,        // deformable groups
         bias,
     )
 
