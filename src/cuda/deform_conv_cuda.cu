@@ -22,8 +22,6 @@ at::Tensor deform_conv_nd_forward_cuda(
 	at::IntArrayRef dilation,
 	const int64_t groups,
 	const int64_t deformable_groups_per_groups, 
-	const double_t offset_scale,
-	const bool fix_center,
 	const at::Tensor& bias) {
 
 	auto k = weight.dim();
@@ -69,12 +67,6 @@ at::Tensor deform_conv_nd_forward_cuda(
 
 	int64_t kernel_sizes = c10::multiply_integers(kernel_size);
 	int64_t output_sizes = c10::multiply_integers(output_size.slice(2));
-
-	if (fix_center)
-	{
-		// fix_center only available when kernel sizes is odd.
-		TORCH_CHECK(kernel_sizes % 2 != 0);
-	}
 
 	torch::Device device = input.device();
 
@@ -163,8 +155,6 @@ at::Tensor deform_conv_nd_forward_cuda(
 				IntArrayRef2IntArray<dim>(dilation),
 				groups,
 				deformable_groups_per_groups,
-				offset_scale,
-				fix_center,
 				columns.mutable_data_ptr<scalar_t>()
 			);
 
@@ -196,8 +186,6 @@ torch::autograd::tensor_list deform_conv_nd_backward_cuda(
 	at::IntArrayRef dilation,
 	const int64_t groups,
 	const int64_t deformable_groups_per_groups,
-	const double_t offset_scale,
-	const bool fix_center,
 	const at::Tensor& bias) {
 
 	auto k = weight.dim();
@@ -247,12 +235,6 @@ torch::autograd::tensor_list deform_conv_nd_backward_cuda(
 
 	int64_t kernel_sizes = c10::multiply_integers(kernel_size);
 	int64_t output_sizes = c10::multiply_integers(output_size.slice(2));
-
-	if (fix_center)
-	{
-		// fix_center only available when kernel sizes is odd.
-		TORCH_CHECK(kernel_sizes % 2 != 0);
-	}
 
 	torch::Device device = input.device();
 
@@ -342,7 +324,7 @@ torch::autograd::tensor_list deform_conv_nd_backward_cuda(
 			at::Tensor grad_offset_field_n = grad_offset_field.slice(0, batch_start, batch_start + sub_batch_size);
 			at::Tensor grad_attn_mask_n = grad_attn_mask.slice(0, batch_start, batch_start + sub_batch_size);
 			at::Tensor grad_output_n = grad_output.slice(0, batch_start, batch_start + sub_batch_size);
-			
+
 			columns.zero_();
 
 			columns.copy_(torch::bmm(
@@ -366,8 +348,6 @@ torch::autograd::tensor_list deform_conv_nd_backward_cuda(
 				IntArrayRef2IntArray<dim>(dilation),
 				groups,
 				deformable_groups_per_groups,
-				offset_scale,
-				fix_center,
 				(mapped_type<scalar_t>*)grad_input_n.mutable_data_ptr<scalar_t>(),
 				(mapped_type<scalar_t>*)grad_offset_field_n.mutable_data_ptr<scalar_t>(),
 				(mapped_type<scalar_t>*)grad_attn_mask_n.mutable_data_ptr<scalar_t>()
@@ -376,7 +356,7 @@ torch::autograd::tensor_list deform_conv_nd_backward_cuda(
 			columns.zero_();
 
 			// compute grad_weight = grad_output * col^T
-			im2col_nd_cuda_func<<<num_blocks, block_size, 0, cudaStream>>>(
+			im2col_nd_cuda_func<<<num_blocks, block_size, 0, cudaStream >>>(
 				input_n.const_data_ptr<scalar_t>(),
 				offset_field_n.const_data_ptr<scalar_t>(),
 				attn_mask_n.const_data_ptr<scalar_t>(),
@@ -390,8 +370,6 @@ torch::autograd::tensor_list deform_conv_nd_backward_cuda(
 				IntArrayRef2IntArray<dim>(dilation),
 				groups,
 				deformable_groups_per_groups,
-				offset_scale,
-				fix_center,
 				columns.mutable_data_ptr<scalar_t>()
 			);
 
@@ -414,7 +392,7 @@ torch::autograd::tensor_list deform_conv_nd_backward_cuda(
 
 	return {
 		grad_input, grad_weight, grad_offset_field, grad_attn_mask,
-		undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+		undefined, undefined, undefined, undefined, undefined, undefined,
 		grad_bias
 	};
 }

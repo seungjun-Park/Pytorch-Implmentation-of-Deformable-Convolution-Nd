@@ -31,8 +31,6 @@ col2im_nd_cuda(
     const IntArray<dim> dilation,
     const int64_t groups,
     const int64_t deformable_groups_per_groups,
-    const double_t offset_scale,
-    const bool fix_center,
     mapped_type<T>* data_grad_im,
     mapped_type<T>* data_grad_offset_field,
     mapped_type<T>* data_grad_attn_mask) {
@@ -55,15 +53,15 @@ col2im_nd_cuda(
     int64_t ch = idx / (kernel_sizes * sub_batch * output_sizes) % grouped_channels;
     int64_t g = idx / (grouped_channels * kernel_sizes * sub_batch * output_sizes) % groups;
 
-    int64_t d_g = deformable_groups_per_groups * ch / grouped_channels;
+    int64_t d_g = (ch * deformable_groups_per_groups) / grouped_channels;
 
     data_im += ((b * groups + g) * grouped_channels + ch) * input_sizes;
-    data_grad_im += ((b * groups + g) * grouped_channels + ch) * input_sizes;
-    data_col += ((g * grouped_channels + ch) * kernel_sizes * sub_batch + b) * output_sizes + col;
-    data_offset_field += (((b * groups + g) * deformable_groups_per_groups + d_g) * (kernel_sizes - fix_center) + k) * dim * output_sizes + col;
+    data_col += (((g * grouped_channels + ch) * kernel_sizes + k) * sub_batch + b) * output_sizes + col;
+    data_offset_field += (((b * groups + g) * deformable_groups_per_groups + d_g) * kernel_sizes + k) * dim * output_sizes + col;
     data_attn_mask += (((b * groups + g) * deformable_groups_per_groups + d_g) * kernel_sizes + k) * output_sizes + col;
 
-    data_grad_offset_field += (((b * groups + g) * deformable_groups_per_groups + d_g) * (kernel_sizes - fix_center) + k) * dim * output_sizes + col;
+    data_grad_im += ((b * groups + g) * grouped_channels + ch) * input_sizes;
+    data_grad_offset_field += (((b * groups + g) * deformable_groups_per_groups + d_g) * kernel_sizes + k) * dim * output_sizes + col;
     data_grad_attn_mask += (((b * groups + g) * deformable_groups_per_groups + d_g) * kernel_sizes + k) * output_sizes + col;
 
     int64_t current_output_size[dim];
@@ -73,13 +71,6 @@ col2im_nd_cuda(
     int64_t out_div = 1;
     int64_t k_div = 1;
 
-    int64_t k_center = k / 2;
-    if (k > k_center && fix_center)
-    {
-        data_offset_field -= dim * output_sizes;
-        data_grad_offset_field -= dim * output_sizes;
-    }
-
     // compute current kernel size, output size and coord.
     for (int8_t i = dim - 1; i >= 0; i--)
     {
@@ -87,13 +78,7 @@ col2im_nd_cuda(
         current_output_size[i] = col / out_div % output_size[i];
         out_div *= output_size[i];
         k_div *= kernel_size[i];
-        coord[i] = current_output_size[i] * stride[i] - padding[i] + current_kernel_size[i] * dilation[i];
-
-        // DCN v4 coord compute
-        if (!fix_center || k != k_center)
-        {
-            coord[i] += data_offset_field[i * output_sizes] * offset_scale;
-        }
+        coord[i] = current_output_size[i] * stride[i] - padding[i] + current_kernel_size[i] * dilation[i] + data_offset_field[i * output_sizes];
     }
         
     T data_col_val = *data_col;
@@ -102,14 +87,11 @@ col2im_nd_cuda(
     T val = linear_interp_nd<T, dim, is_channels_last>(data_im, coord, input_size, grouped_channels * groups);
     atomicAdd(data_grad_attn_mask, (mapped_type<T>)(data_col_val * val));
 
-    if (!fix_center || k != k_center)
-    {
-        Array<T, dim> grad_coord = linear_interp_nd_grad<T, dim, is_channels_last>(data_im, coord, input_size, grouped_channels * groups);
+    Array<T, dim> grad_coord = linear_interp_nd_grad<T, dim, is_channels_last>(data_im, coord, input_size, grouped_channels * groups);
 
-        for (int8_t i = dim - 1; i >= 0; i--)
-        {
-            atomicAdd(&data_grad_offset_field[i * output_sizes], (mapped_type<T>)(data_col_val * grad_coord[i] * data_attn_mask_val));
-        }
+    for (int8_t i = dim - 1; i >= 0; i--)
+    {
+        atomicAdd(&data_grad_offset_field[i * output_sizes], (mapped_type<T>)(data_col_val * grad_coord[i] * data_attn_mask_val));
     }
 
     linear_interp_nd_weight<T, dim, is_channels_last>(data_col_val, data_attn_mask_val, coord, input_size, grouped_channels * groups, data_grad_im);
@@ -133,8 +115,6 @@ col2im_nd_cuda(
     const IntArray<dim> dilation,
     const int64_t groups,
     const int64_t deformable_groups_per_groups,
-    const double_t offset_scale,
-    const bool fix_center,
     mapped_type<T>* data_grad_im,
     mapped_type<T>* data_grad_offset_field,
     mapped_type<T>* data_grad_attn_mask) {
@@ -163,10 +143,10 @@ col2im_nd_cuda(
     data_grad_im += ((b * input_sizes * groups + g) * grouped_channels + ch);
 
     data_col += (((b * output_sizes + col) * groups + g) * grouped_channels + ch) * kernel_sizes + k;
-    data_offset_field += ((((b * output_sizes + col) * groups + g) * deformable_groups_per_groups + d_g) * (kernel_sizes - fix_center) + k) * dim;
+    data_offset_field += ((((b * output_sizes + col) * groups + g) * deformable_groups_per_groups + d_g) * kernel_sizes + k) * dim;
     data_attn_mask += (((b * output_sizes + col) * groups + g) * deformable_groups_per_groups + d_g) * kernel_sizes + k;
 
-    data_grad_offset_field += ((((b * output_sizes + col) * groups + g) * deformable_groups_per_groups + d_g) * (kernel_sizes - fix_center) + k) * dim;
+    data_grad_offset_field += ((((b * output_sizes + col) * groups + g) * deformable_groups_per_groups + d_g) * kernel_sizes + k) * dim;
     data_grad_attn_mask += (((b * output_sizes + col) * groups + g) * deformable_groups_per_groups + d_g) * kernel_sizes + k;
 
     int64_t current_output_size[dim];
@@ -176,13 +156,6 @@ col2im_nd_cuda(
     int64_t out_div = 1;
     int64_t k_div = 1;
 
-    int64_t k_center = k / 2;
-    if (k > k_center && fix_center)
-    {
-        data_offset_field -= dim;
-        data_grad_offset_field -= dim;
-    }
-
     // compute current kernel size, output size and coord.
     for (int8_t i = dim - 1; i >= 0; i--)
     {
@@ -190,13 +163,7 @@ col2im_nd_cuda(
         current_output_size[i] = col / out_div % output_size[i];
         out_div *= output_size[i];
         k_div *= kernel_size[i];
-        coord[i] = current_output_size[i] * stride[i] - padding[i] + current_kernel_size[i] * dilation[i];
-
-        // DCN v4 coord compute
-        if (!fix_center || k != k_center)
-        {
-            coord[i] += data_offset_field[i] * offset_scale;
-        }
+        coord[i] = current_output_size[i] * stride[i] - padding[i] + current_kernel_size[i] * dilation[i] + data_offset_field[i];
     }
 
     T data_col_val = *data_col;
@@ -205,14 +172,11 @@ col2im_nd_cuda(
     T val = linear_interp_nd<T, dim, is_channels_last>(data_im, coord, input_size, grouped_channels * groups);
     atomicAdd(data_grad_attn_mask, (mapped_type<T>)(data_col_val * val));
 
-    if (!fix_center || k != k_center)
-    {
-        Array<T, dim> grad_coord = linear_interp_nd_grad<T, dim, is_channels_last>(data_im, coord, input_size, grouped_channels * groups);
+    Array<T, dim> grad_coord = linear_interp_nd_grad<T, dim, is_channels_last>(data_im, coord, input_size, grouped_channels * groups);
 
-        for (int8_t i = dim - 1; i >= 0; i--)
-        {
-            atomicAdd(&data_grad_offset_field[i], (mapped_type<T>)(data_col_val * grad_coord[i] * data_attn_mask_val));
-        }
+    for (int8_t i = dim - 1; i >= 0; i--)
+    {
+        atomicAdd(&data_grad_offset_field[i], (mapped_type<T>)(data_col_val * grad_coord[i] * data_attn_mask_val));
     }
 
     linear_interp_nd_weight<T, dim, is_channels_last>(data_col_val, data_attn_mask_val, coord, input_size, grouped_channels * groups, data_grad_im);
