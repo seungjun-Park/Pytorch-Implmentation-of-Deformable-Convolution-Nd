@@ -1,9 +1,9 @@
 #include <torch/extension.h>
+#include <ATen/cuda/CUDAContext.h>
 
 #include <cuda/im2col_cuda.h>
 #include <cuda/col2im_cuda.h>
 #include <cuda_runtime.h>
-#include <c10/cuda/CUDAStream.h>
 
 #include <GPUInfo.h>
 #include <deform_conv_utils.h>
@@ -21,7 +21,9 @@ at::Tensor deform_conv_nd_forward_cuda(
 	at::IntArrayRef padding,
 	at::IntArrayRef dilation,
 	const int64_t groups,
-	const int64_t deformable_groups_per_groups,
+	const int64_t deformable_groups_per_groups, 
+	const double_t offset_scale,
+	const bool fix_center,
 	const at::Tensor& bias) {
 
 	auto k = weight.dim();
@@ -46,11 +48,11 @@ at::Tensor deform_conv_nd_forward_cuda(
 	// slice tensor sizes (b, c, *) to (*) 
 	auto input_size = input.sizes();
 
-	int32_t batch_size = input.size(0);
-	int32_t in_channels = input.size(1);
-	int32_t out_channels = weight.size(0);
-	int32_t grouped_in_channels = in_channels / groups;
-	int32_t grouped_out_channels = out_channels / groups;
+	int64_t batch_size = input.size(0);
+	int64_t in_channels = input.size(1);
+	int64_t out_channels = weight.size(0);
+	int64_t grouped_in_channels = in_channels / groups;
+	int64_t grouped_out_channels = out_channels / groups;
 
 	at::Tensor output = at::zeros(
 		get_output_size<dim>(input, weight, kernel_size, stride, padding, dilation),
@@ -65,8 +67,14 @@ at::Tensor deform_conv_nd_forward_cuda(
 
 	auto output_size = output.sizes();
 
-	int32_t kernel_sizes = c10::multiply_integers(kernel_size);
-	int32_t output_sizes = c10::multiply_integers(output_size.slice(2));
+	int64_t kernel_sizes = c10::multiply_integers(kernel_size);
+	int64_t output_sizes = c10::multiply_integers(output_size.slice(2));
+
+	if (fix_center)
+	{
+		// fix_center only available when kernel sizes is odd.
+		TORCH_CHECK(kernel_sizes % 2 != 0);
+	}
 
 	torch::Device device = input.device();
 
@@ -121,7 +129,7 @@ at::Tensor deform_conv_nd_forward_cuda(
 		output_n_size[2 + i] = output_size.slice(2)[i];
 	}
 
-	auto cudaStream = c10::cuda::getCurrentCUDAStream(device.index());
+	auto cudaStream = at::cuda::getCurrentCUDAStream(device.index());
 
 	AT_DISPATCH_FLOATING_TYPES_AND2(at::kHalf, at::kBFloat16, input.scalar_type(), "deform_conv_nd_forward<>", [&]() {
 		using scalar_t = scalar_t;
@@ -155,6 +163,8 @@ at::Tensor deform_conv_nd_forward_cuda(
 				IntArrayRef2IntArray<dim>(dilation),
 				groups,
 				deformable_groups_per_groups,
+				offset_scale,
+				fix_center,
 				columns.mutable_data_ptr<scalar_t>()
 			);
 
@@ -186,6 +196,8 @@ torch::autograd::tensor_list deform_conv_nd_backward_cuda(
 	at::IntArrayRef dilation,
 	const int64_t groups,
 	const int64_t deformable_groups_per_groups,
+	const double_t offset_scale,
+	const bool fix_center,
 	const at::Tensor& bias) {
 
 	auto k = weight.dim();
@@ -235,6 +247,12 @@ torch::autograd::tensor_list deform_conv_nd_backward_cuda(
 
 	int64_t kernel_sizes = c10::multiply_integers(kernel_size);
 	int64_t output_sizes = c10::multiply_integers(output_size.slice(2));
+
+	if (fix_center)
+	{
+		// fix_center only available when kernel sizes is odd.
+		TORCH_CHECK(kernel_sizes % 2 != 0);
+	}
 
 	torch::Device device = input.device();
 
@@ -299,7 +317,7 @@ torch::autograd::tensor_list deform_conv_nd_backward_cuda(
 
 	columns = columns.reshape({ groups, -1, sub_batch_size * output_sizes });
 
-	auto cudaStream = c10::cuda::getCurrentCUDAStream(device.index());
+	auto cudaStream = at::cuda::getCurrentCUDAStream(device.index());
 
 	AT_DISPATCH_FLOATING_TYPES_AND2(at::kHalf, at::kBFloat16, input.scalar_type(), "deform_conv_nd_backward<>", [&]() {
 		using scalar_t = scalar_t;
@@ -348,6 +366,8 @@ torch::autograd::tensor_list deform_conv_nd_backward_cuda(
 				IntArrayRef2IntArray<dim>(dilation),
 				groups,
 				deformable_groups_per_groups,
+				offset_scale,
+				fix_center,
 				(mapped_type<scalar_t>*)grad_input_n.mutable_data_ptr<scalar_t>(),
 				(mapped_type<scalar_t>*)grad_offset_field_n.mutable_data_ptr<scalar_t>(),
 				(mapped_type<scalar_t>*)grad_attn_mask_n.mutable_data_ptr<scalar_t>()
@@ -356,7 +376,7 @@ torch::autograd::tensor_list deform_conv_nd_backward_cuda(
 			columns.zero_();
 
 			// compute grad_weight = grad_output * col^T
-			im2col_nd_cuda_func<<<num_blocks, block_size, 0, cudaStream >>>(
+			im2col_nd_cuda_func<<<num_blocks, block_size, 0, cudaStream>>>(
 				input_n.const_data_ptr<scalar_t>(),
 				offset_field_n.const_data_ptr<scalar_t>(),
 				attn_mask_n.const_data_ptr<scalar_t>(),
@@ -370,6 +390,8 @@ torch::autograd::tensor_list deform_conv_nd_backward_cuda(
 				IntArrayRef2IntArray<dim>(dilation),
 				groups,
 				deformable_groups_per_groups,
+				offset_scale,
+				fix_center,
 				columns.mutable_data_ptr<scalar_t>()
 			);
 
@@ -392,7 +414,7 @@ torch::autograd::tensor_list deform_conv_nd_backward_cuda(
 
 	return {
 		grad_input, grad_weight, grad_offset_field, grad_attn_mask,
-		undefined, undefined, undefined, undefined, undefined, undefined,
+		undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
 		grad_bias
 	};
 }
