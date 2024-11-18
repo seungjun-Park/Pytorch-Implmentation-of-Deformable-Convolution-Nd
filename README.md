@@ -50,40 +50,39 @@ python setup.py build install
 ## Example  
 ```
 import torch
-import custom_op
+import torch.nn as nn
+from deform_conv import DeformConv2d
 
-device = 'cuda'
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+dtype = torch.bfloat16
 
-inp = torch.randn(2, 32, 64, 64).to(device)
+inputs = torch.randn(2, 384, 64, 64).to(device)
 
-# learnable parameter for deformable convolution.
-weight = torch.randn(64, 32 // 2, 3, 3).to(device)
-bias = torch.randn(64).to(device)
+deform_conv_layer = DeformConv2d(
+    in_channels=384,
+    out_channels=128,
+    kernel_size=3,
+    stride=1,
+    padding=1,
+    dilation=1,
+    groups=8,
+    deformable_groups_per_groups=2,
+    bias=True
+).to(device)
 
-# may be created by nn.Conv, in this case 2d.
-# the shape is [batch, groups * deformable_groups_per_group * kernel_h * kernel_w * (current deformable convolution dim), out_h, out_w], in this case.
-offset_field = torch.randn(2, 16 * 9, 64, 64).to(device)
-
-# the shape is [batch, groups * deformable_groups_per_group * kernel_h * kernel_w, out_h, out_w], in this case.
-attn_mask = torch.randn(2, 1, 16 * 9, 64, 64).to(device)
-
-# usecase. if you want to know what is each parameters meaning, please see doc.md
-with torch.cuda.amp.autocast(dtype=torch.bfloat16):
-    output = torch.ops.custom_op.deform_conv2d(
-        inp,
-        weight,
-        offset_field,
-        attn_mask,
-        (3, 3),   // kernel_size
-        (1, 1),   // stride
-        (1, 1),   // padding
-        (1, 1),   // dilation
-        2,        // groups
-        2,        // deformable groups
-        bias,
-    )
+with torch.autocast(device_type=device, dtype=dtype):
+    output = deform_conv_layer(inputs)
 
 print(output)
+"""
+result is 
+ 1 2 3 4 ..... each values
+ ...    ....     ........
+ 
+ device='cuda: 0', dtype=torch.bfloat16,
+ grad_fn=<CppNode<class DeformConvNdFunction<2>>>)
+ DeformConvNdFunction located at src/deform_conv.cpp
+"""
 ```
   
 ## Reference   
