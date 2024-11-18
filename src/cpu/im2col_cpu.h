@@ -53,12 +53,6 @@ im2col_nd_cpu(
                     int64_t out_div = 1;
                     int64_t k_div = 1;
 
-                    int64_t k_center = k / 2;
-                    if (fix_center && k > k_center)
-                    {
-                        offset_field_idx -= dim * output_sizes;
-                    }
-
                     for (int8_t i = dim - 1; i >= 0; i--)
                     {
                         current_output_size[i] = col / out_div % output_size[i];
